@@ -54,6 +54,9 @@ struct ContentView: View {
                     case .sampleView3:
                         FortuneCookieView()
                             .toolbar(.hidden)
+                    case .waterDropView:
+                        WaterDropView()
+                            .toolbar(.hidden)
                     }
                 }
                 .navigationBarHidden(true)

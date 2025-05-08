@@ -273,6 +273,14 @@ struct LiquidFlowView: View {
                                 .foregroundColor(.white)
 
                         }
+                        
+                        Button {
+                            router.navigate(to: .waterDropView)
+                        } label: {
+                            Text("물방울 흐르는 효과")
+                                .foregroundColor(.white)
+
+                        }
                     }
                 }
                 
