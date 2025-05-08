@@ -54,6 +54,10 @@ struct ContentView: View {
                     case .sampleView3:
                         FortuneCookieView()
                             .toolbar(.hidden)
+                        
+                    case .sampleView5:
+                        CharacterView()
+                            .toolbar(.hidden)
                     }
                 }
                 .navigationBarHidden(true)
