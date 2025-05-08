@@ -9,14 +9,18 @@ import SpriteKit
 
 class GameScene: SKScene {
     private var character: SKSpriteNode!
+    private var wheelNode: SKSpriteNode!
     private var food: SKSpriteNode?
-    private var isEating = false
     
     private var walkTextures: [SKTexture] = []
     private var noseTextures: [SKTexture] = []
     private var hornTextures: [SKTexture] = []
     private var earTextures: [SKTexture] = []
     private var legTextures: [SKTexture] = []
+    private var wheelRunTextures: [SKTexture] = []
+    
+    private var isEating = false
+    private var isRunningWheel = false
     
     override func didMove(to view: SKView) {
         let background = SKSpriteNode(imageNamed: "배경")
@@ -25,7 +29,17 @@ class GameScene: SKScene {
         background.zPosition = -10
         addChild(background)
         
-        loadTextures()
+        loadTextures() // 먼저 텍스처를 로드해야 wheelRunTextures 사용 가능
+
+        // wheelNode 직접 생성 및 할당
+        wheelNode = SKSpriteNode(imageNamed: "쳇바퀴")
+        wheelNode.size = CGSize(width: 144, height: 187)
+        let wheelX = size.width * 0.25
+        let wheelY = size.height * (2.0 / 3.0)
+        wheelNode.position = CGPoint(x: wheelX, y: wheelY)
+        wheelNode.zPosition = -5
+        wheelNode.name = "wheel"
+        addChild(wheelNode)
         
         character = SKSpriteNode(texture: walkTextures.first)
         character.size = CGSize(width: 80, height: 80)
@@ -42,6 +56,7 @@ class GameScene: SKScene {
         hornTextures = (1...8).map { SKTexture(imageNamed: "뿔움직임_\($0)") }
         earTextures = (1...8).map { SKTexture(imageNamed: "귀 쫑긋_\($0)") }
         legTextures = (1...8).map { SKTexture(imageNamed: "누웠을때 다리를 움직이는_\($0)") }
+        wheelRunTextures = (1...8).map { SKTexture(imageNamed: "쳇바퀴_\($0)") }
     }
     
     func spawnFood() {
@@ -74,9 +89,15 @@ class GameScene: SKScene {
             food.removeFromParent()
             self.food = nil
 
-            // 먹이 먹는 애니메이션 텍스처
+            // 먹이 먹는 애니메이션 텍스처 (변경된 순서)
             let eatTextures = [
                 SKTexture(imageNamed: "냐암"),
+                SKTexture(imageNamed: "오"),
+                SKTexture(imageNamed: "물"),
+                SKTexture(imageNamed: "오"),
+                SKTexture(imageNamed: "물"),
+                SKTexture(imageNamed: "오"),
+                SKTexture(imageNamed: "물"),
                 SKTexture(imageNamed: "오"),
                 SKTexture(imageNamed: "물")
             ]
@@ -92,6 +113,44 @@ class GameScene: SKScene {
         let walkAnimation = SKAction.repeatForever(SKAction.animate(with: walkTextures, timePerFrame: 0.1))
         character.run(walkAnimation, withKey: "walk")
         character.run(SKAction.sequence([move, eat]))
+    }
+    
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        let location = touch.location(in: self)
+        let tappedNode = atPoint(location)
+        
+        if tappedNode.name == "wheel" {
+            toggleWheelRunning()
+        }
+    }
+    
+    private func toggleWheelRunning() {
+        let wheelFrontPosition = CGPoint(x: wheelNode.position.x, y: wheelNode.position.y + 10)
+
+        if isRunningWheel {
+            // 정지 로직
+            wheelNode.removeAllActions()
+            wheelNode.texture = SKTexture(imageNamed: "쳇바퀴") // 원래 이미지로 복귀
+
+            character.position = wheelFrontPosition
+            character.isHidden = false
+            isRunningWheel = false
+            runFreeMovement()
+        } else {
+            // 고슴도치 이동 후 애니메이션 시작
+            character.removeAllActions()
+            character.xScale = wheelFrontPosition.x < character.position.x ? -1 : 1
+            character.run(SKAction.move(to: wheelFrontPosition, duration: 0.6)) { [weak self] in
+                guard let self = self else { return }
+                self.character.isHidden = true
+                let animation = SKAction.repeatForever(
+                    SKAction.animate(with: self.wheelRunTextures, timePerFrame: 0.1)
+                )
+                self.wheelNode.run(animation)
+                self.isRunningWheel = true
+            }
+        }
     }
     
     private func runFreeMovement() {
