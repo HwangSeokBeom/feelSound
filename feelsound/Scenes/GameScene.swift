@@ -12,6 +12,7 @@ class GameScene: SKScene {
     private var wheelNode: SKSpriteNode!
     private var feedButton: SKSpriteNode!
     private var cleanButton: SKSpriteNode!
+    private var poopTexture: SKTexture!
     private var food: SKSpriteNode?
     
     private var walkTextures: [SKTexture] = []
@@ -94,6 +95,7 @@ class GameScene: SKScene {
         earTextures = (1...8).map { SKTexture(imageNamed: "귀 쫑긋_\($0)") }
         legTextures = (1...8).map { SKTexture(imageNamed: "누웠을때 다리를 움직이는_\($0)") }
         wheelRunTextures = (1...8).map { SKTexture(imageNamed: "쳇바퀴_\($0)") }
+        poopTexture = SKTexture(imageNamed: "임시똥")
     }
     
     private func setupButtons() {
@@ -129,19 +131,26 @@ class GameScene: SKScene {
     }
     
     private func runCleanAction() {
+        // 씬에 있는 모든 자식 중에서 첫 번째 "poop" 노드를 찾음
+        guard let poopNode = children.first(where: { $0.name == "poop" }) else { return }
+
+        // 빗자루를 똥 위치에 생성
         let broom = SKSpriteNode(imageNamed: "빗자루")
         broom.size = CGSize(width: 80, height: 80)
-        broom.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        broom.position = poopNode.position
         broom.zPosition = 11
         addChild(broom)
-        
-        let move = SKAction.moveBy(x: 100, y: 0, duration: 0.3)
-        let moveBack = SKAction.moveBy(x: -100, y: 0, duration: 0.3)
+
+        // 좌우로 움직이는 청소 애니메이션
+        let move = SKAction.moveBy(x: 40, y: 0, duration: 0.2)
+        let moveBack = SKAction.moveBy(x: -40, y: 0, duration: 0.2)
         let sequence = SKAction.sequence([move, moveBack])
         let repeatSweep = SKAction.repeat(sequence, count: 3)
-        
-        broom.run(repeatSweep) {
+
+        // 애니메이션 완료 후 똥 제거
+        broom.run(repeatSweep) { [weak self] in
             broom.removeFromParent()
+            poopNode.removeFromParent()
         }
     }
     
@@ -268,7 +277,12 @@ class GameScene: SKScene {
             }
             return
         }
-        
+
+        // 20% 확률로 똥 싸기
+        if Int.random(in: 0..<5) == 0 {
+            dropPoop()
+        }
+
         // 마진 정의
         let horizontalMargin: CGFloat = 40
         let bottomMargin: CGFloat = 80
@@ -276,11 +290,9 @@ class GameScene: SKScene {
         let halfHeight = character.size.height / 2
         let topLimit = bottomMargin + (size.height - bottomMargin) * 0.7
         
-        // 이동 거리
         let randomDx = CGFloat.random(in: -100...100)
         let randomDy = CGFloat.random(in: -100...100)
         
-        // 제한된 좌표 계산 (캐릭터 크기 고려)
         let minX = horizontalMargin + halfWidth
         let maxX = size.width - horizontalMargin - halfWidth
         let minY = bottomMargin + halfHeight
@@ -301,6 +313,25 @@ class GameScene: SKScene {
         
         let sequence = SKAction.sequence([move, wait, SKAction.run { [weak self] in self?.runFreeMovement() }])
         character.run(sequence, withKey: "move")
+    }
+    
+    private func dropPoop() {
+        let poop = SKSpriteNode(texture: poopTexture)
+        poop.size = CGSize(width: 30, height: 30)
+        poop.position = CGPoint(
+            x: character.position.x,
+            y: character.position.y - character.size.height / 2 - 10
+        )
+        poop.zPosition = -1
+        poop.name = "poop" // 이름 지정
+        addChild(poop)
+    }
+    
+    private func removeOnePoop() {
+        // 씬에 있는 모든 자식 중에서 첫 번째 "poop" 노드를 찾음
+        if let poopNode = children.first(where: { $0.name == "poop" }) {
+            poopNode.removeFromParent()
+        }
     }
     
     private func runRandomAction(completion: @escaping () -> Void) {
