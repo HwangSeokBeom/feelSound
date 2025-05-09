@@ -21,11 +21,7 @@ struct CharacterView: View {
                 }
 
             VStack {
-                Spacer()
-                Button("🍎 먹이 주기") {
-                    scene.spawnFood()
-                }
-                .padding()
+  
             }
         }
     }

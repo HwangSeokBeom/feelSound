@@ -10,6 +10,8 @@ import SpriteKit
 class GameScene: SKScene {
     private var character: SKSpriteNode!
     private var wheelNode: SKSpriteNode!
+    private var feedButton: SKSpriteNode!
+    private var cleanButton: SKSpriteNode!
     private var food: SKSpriteNode?
 
     private var walkTextures: [SKTexture] = []
@@ -39,16 +41,43 @@ class GameScene: SKScene {
         addChild(background)
 
         loadTextures()
+        setupButtons()
 
+        // 쳇바퀴
         wheelNode = SKSpriteNode(imageNamed: "쳇바퀴")
-        wheelNode.size = CGSize(width: 144, height: 187)
-        let wheelX = size.width * 0.25
+        wheelNode.size = CGSize(width: 180, height: 210)
+        let wheelX = size.width * 0.2
         let wheelY = size.height * (2.0 / 3.0)
         wheelNode.position = CGPoint(x: wheelX, y: wheelY)
         wheelNode.zPosition = -5
         wheelNode.name = "wheel"
         addChild(wheelNode)
+        
+        // 창문
+        let windowNode = SKSpriteNode(imageNamed: "창문")
+        windowNode.size = CGSize(width: 150, height: 150)
+        windowNode.position = CGPoint(x: size.width / 2, y: size.height - 120)
+        windowNode.zPosition = -5
+        windowNode.name = "window"
+        addChild(windowNode)
+        
+        // 그림판
+        let easelNode = SKSpriteNode(imageNamed: "그림판")
+        easelNode.size = CGSize(width: 170, height: 200)
+        easelNode.position = CGPoint(x: size.width * 0.84, y: size.height * 0.7)
+        easelNode.zPosition = -5
+        easelNode.name = "easel"
+        addChild(easelNode)
+        
+        // 침대
+        let bedNode = SKSpriteNode(imageNamed: "침대")
+        bedNode.size = CGSize(width: 180, height: 180)
+        bedNode.position = CGPoint(x: size.width * 0.82, y: size.height * 0.52)
+        bedNode.zPosition = -5
+        bedNode.name = "bed"
+        addChild(bedNode)
 
+        // 고슴도치
         character = SKSpriteNode(texture: walkTextures.first)
         character.size = CGSize(width: 80, height: 80)
         character.position = CGPoint(x: size.width / 2, y: size.height / 2)
@@ -65,6 +94,55 @@ class GameScene: SKScene {
         earTextures = (1...8).map { SKTexture(imageNamed: "귀 쫑긋_\($0)") }
         legTextures = (1...8).map { SKTexture(imageNamed: "누웠을때 다리를 움직이는_\($0)") }
         wheelRunTextures = (1...8).map { SKTexture(imageNamed: "쳇바퀴_\($0)") }
+    }
+    
+    private func setupButtons() {
+        let buttonSize = CGSize(width: 80, height: 80)
+
+        feedButton = SKSpriteNode(imageNamed: "먹이주기")
+        feedButton.name = "feed"
+        feedButton.size = buttonSize
+        feedButton.position = CGPoint(x: 60, y: 100)
+        feedButton.zPosition = 10
+        addChild(feedButton)
+
+        cleanButton = SKSpriteNode(imageNamed: "청소하기")
+        cleanButton.name = "clean"
+        cleanButton.size = buttonSize
+        cleanButton.position = CGPoint(x: 65, y: 180)
+        cleanButton.zPosition = 10
+        addChild(cleanButton)
+
+        let proButton = SKSpriteNode(imageNamed: "프로버튼")
+        proButton.name = "pro"
+        proButton.size = CGSize(width: 100, height: 56)
+        proButton.position = CGPoint(x: 60, y: size.height - 80)
+        proButton.zPosition = 10
+        addChild(proButton)
+
+        let outdoorButton = SKSpriteNode(imageNamed: "야외버튼")
+        outdoorButton.name = "outdoor"
+        outdoorButton.size = CGSize(width: 80, height: 80)
+        outdoorButton.position = CGPoint(x: size.width - 60, y: 80)
+        outdoorButton.zPosition = 10
+        addChild(outdoorButton)
+    }
+    
+    private func runCleanAction() {
+        let broom = SKSpriteNode(imageNamed: "빗자루")
+        broom.size = CGSize(width: 80, height: 80)
+        broom.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        broom.zPosition = 11
+        addChild(broom)
+
+        let move = SKAction.moveBy(x: 100, y: 0, duration: 0.3)
+        let moveBack = SKAction.moveBy(x: -100, y: 0, duration: 0.3)
+        let sequence = SKAction.sequence([move, moveBack])
+        let repeatSweep = SKAction.repeat(sequence, count: 3)
+
+        broom.run(repeatSweep) {
+            broom.removeFromParent()
+        }
     }
 
     func spawnFood() {
@@ -128,9 +206,29 @@ class GameScene: SKScene {
         let location = touch.location(in: self)
         let tappedNode = atPoint(location)
 
-        // 쳇바퀴 클릭은 idle이거나 wheel 동작 중일 때만 반응
-        if tappedNode.name == "wheel", currentAction == .idle || currentAction == .runningOnWheel {
-            toggleWheelRunning()
+        switch tappedNode.name {
+        case "wheel":
+            if currentAction == .idle || currentAction == .runningOnWheel {
+                toggleWheelRunning()
+            }
+        case "feed":
+            spawnFood()
+        case "clean":
+            runCleanAction()
+        case "window":
+            print("창문 클릭됨!") // 여기에 원하는 동작 구현
+        case "easel":
+            print("그림판 클릭됨!") // 여기에 원하는 동작 구현
+        case "bed":
+            print("침대 클릭됨!") // 여기에 원하는 동작 구현
+        case "pro":
+            print("프로 버튼 클릭됨!")
+            // 여기에 광고 팝업 또는 Pro 업그레이드 화면 전환 코드 추가
+        case "outdoor":
+            print("야외 버튼 클릭됨!")
+            // 야외 씬으로 이동하거나 애니메이션 등 추가
+        default:
+            break
         }
     }
 
