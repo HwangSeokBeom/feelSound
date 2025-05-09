@@ -154,19 +154,40 @@ class GameScene: SKScene {
         }
     }
     
+    private func actionAreaBounds(for size: CGSize) -> CGRect {
+        let horizontalMargin: CGFloat = 40
+        let bottomMargin: CGFloat = 80
+        let topLimit = bottomMargin + (size.height - bottomMargin) * 0.7
+
+        let minX = horizontalMargin
+        let maxX = size.width - horizontalMargin
+        let minY = bottomMargin
+        let maxY = topLimit
+
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+    
     func spawnFood() {
+        let bounds = actionAreaBounds(for: size)
+        let halfFoodWidth: CGFloat = 20
+        let halfFoodHeight: CGFloat = 20
+
+        let minX = bounds.minX + halfFoodWidth
+        let maxX = bounds.maxX - halfFoodWidth
+        let minY = bounds.minY + halfFoodHeight
+        let maxY = bounds.maxY - halfFoodHeight
+
         let foodNode = SKSpriteNode(imageNamed: "사과")
         foodNode.size = CGSize(width: 40, height: 40)
         foodNode.position = CGPoint(
-            x: CGFloat.random(in: 50...(size.width - 50)),
-            y: CGFloat.random(in: 100...(size.height - 100))
+            x: CGFloat.random(in: minX...maxX),
+            y: CGFloat.random(in: minY...maxY)
         )
         foodNode.name = "food"
         foodNode.zPosition = 1
         addChild(foodNode)
         foods.append(foodNode)
 
-        // 만약 현재 아무 동작이 없다면 바로 먹이로 이동
         if currentAction == .idle {
             moveToFood()
         }
@@ -284,7 +305,7 @@ class GameScene: SKScene {
     
     private func runFreeMovement() {
         guard !isEating, currentAction == .idle else { return }
-        
+
         if Int.random(in: 0..<4) == 0 {
             runRandomAction {
                 self.runFreeMovement()
@@ -292,39 +313,30 @@ class GameScene: SKScene {
             return
         }
 
-        // 20% 확률로 똥 싸기
         if Int.random(in: 0..<5) == 0 {
             dropPoop()
         }
 
-        // 마진 정의
-        let horizontalMargin: CGFloat = 40
-        let bottomMargin: CGFloat = 80
+        let bounds = actionAreaBounds(for: size)
         let halfWidth = character.size.width / 2
         let halfHeight = character.size.height / 2
-        let topLimit = bottomMargin + (size.height - bottomMargin) * 0.7
-        
+
         let randomDx = CGFloat.random(in: -100...100)
         let randomDy = CGFloat.random(in: -100...100)
-        
-        let minX = horizontalMargin + halfWidth
-        let maxX = size.width - horizontalMargin - halfWidth
-        let minY = bottomMargin + halfHeight
-        let maxY = topLimit - halfHeight
-        
-        let newX = max(minX, min(character.position.x + randomDx, maxX))
-        let newY = max(minY, min(character.position.y + randomDy, maxY))
+
+        let newX = max(bounds.minX + halfWidth, min(character.position.x + randomDx, bounds.maxX - halfWidth))
+        let newY = max(bounds.minY + halfHeight, min(character.position.y + randomDy, bounds.maxY - halfHeight))
         let destination = CGPoint(x: newX, y: newY)
-        
+
         character.xScale = destination.x < character.position.x ? -1 : 1
-        
+
         let move = SKAction.move(to: destination, duration: 1.0)
         let wait = SKAction.wait(forDuration: 0.5)
-        
+
         character.removeAction(forKey: "walk")
         let walkAnimation = SKAction.repeatForever(SKAction.animate(with: walkTextures, timePerFrame: 0.1))
         character.run(walkAnimation, withKey: "walk")
-        
+
         let sequence = SKAction.sequence([move, wait, SKAction.run { [weak self] in self?.runFreeMovement() }])
         character.run(sequence, withKey: "move")
     }
