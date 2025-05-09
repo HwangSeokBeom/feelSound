@@ -12,10 +12,14 @@ struct WaterDropView: View {
     @State private var raindrops: [Raindrop] = []
     @State private var weatherState: WeatherState = .day
     @State private var timerCancellable: Cancellable? = nil
-
+    @State private var backgroundImage: String = "nature"
+    
     var body: some View {
         ZStack {
-            backgroundView()
+            Image(backgroundImage)
+                .resizable()
+                .scaledToFill()
+                .ignoresSafeArea()
             
             ForEach(raindrops) { raindrop in
                 Image(raindrop.imageName)
@@ -26,30 +30,23 @@ struct WaterDropView: View {
             
             VStack {
                 Spacer()
-                HStack {
-                    Button("Day") {
+                HStack(spacing: 8) {
+                    Button("DAY") {
+                        backgroundImage = "nature"
                         startRain(with: .day)
                     }
-                    .padding()
-                    .background(Color.blue.opacity(0.7))
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
+                    .buttonStyle(BasicButtonStyle())
                     
-                    Button("Stop") {
+                    Button("STOP") {
                         stopRain()
                     }
-                    .padding()
-                    .background(Color.gray.opacity(0.7))
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
+                    .buttonStyle(BasicButtonStyle())
                     
-                    Button("Night") {
+                    Button("NIGHT") {
+                        backgroundImage = "night"
                         startRain(with: .night)
                     }
-                    .padding()
-                    .background(Color.black.opacity(0.7))
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
+                    .buttonStyle(BasicButtonStyle())
                 }
                 .padding(.bottom, 20)
             }
@@ -59,26 +56,7 @@ struct WaterDropView: View {
         }
     }
     
-    // ✅ 배경 이미지 변경
-    @ViewBuilder
-    private func backgroundView() -> some View {
-        switch weatherState {
-        case .day:
-            Image("day_background")
-                .resizable()
-                .scaledToFill()
-                .ignoresSafeArea()
-        case .night:
-            Image("night_background")
-                .resizable()
-                .scaledToFill()
-                .ignoresSafeArea()
-        case .stop:
-            Color.clear.ignoresSafeArea()
-        }
-    }
-
-    // ✅ 비 내리기 시작
+    // 비 내리기 시작
     private func startRain(with state: WeatherState) {
         weatherState = state
         raindrops.removeAll()
@@ -90,31 +68,31 @@ struct WaterDropView: View {
                 self.addRaindrop()
             }
     }
-
-    // ✅ 비 멈추기
+    
+    // 비 멈추기
     private func stopRain() {
         timerCancellable?.cancel()
         timerCancellable = nil
         raindrops.removeAll()
         weatherState = .stop
     }
-
-    // ✅ 빗방울 생성
+    
+    // 빗방울 생성
     private func addRaindrop() {
         let raindropImages = ["waterdrop_01", "waterdrop_02", "waterdrop_03", "waterdrop_04"]
         let dropCount = Int.random(in: 10...15) // 한 번에 생성할 빗방울 개수
         
         for _ in 0..<dropCount {
             guard let randomImageName = raindropImages.randomElement() else { continue }
-
+            
             // ✅ 화면 전체에서 랜덤한 위치로 생성
             let randomX = CGFloat.random(in: 0...(UIScreen.main.bounds.width))
             let randomY = CGFloat.random(in: 0...(UIScreen.main.bounds.height - 200))
             let size = CGFloat.random(in: 5...8)
-
+            
             let newRaindrop = Raindrop(id: UUID(), imageName: randomImageName, x: randomX, y: randomY, size: size)
             raindrops.append(newRaindrop)
-
+            
             // 빗방울 제거 (5초 후)
             DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
                 raindrops.removeAll { $0.id == newRaindrop.id }
@@ -131,7 +109,6 @@ struct Raindrop: Identifiable, Equatable {
     var size: CGFloat
 }
 
-// ✅ 날씨 상태 enum
 enum WeatherState {
     case day
     case night
@@ -139,12 +116,26 @@ enum WeatherState {
 }
 
 // 버튼 스타일 지정
-struct PrimaryButtonStyle: ButtonStyle {
+struct BasicButtonStyle: ButtonStyle {
     func makeBody(configuration: Self.Configuration) -> some View {
         configuration.label
-            .frame(width: 230, height: 45)
-            .font(.system(size: 14))
+            .font(.system(size: 16, weight: .bold))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color.gray.opacity(0.7))
             .foregroundColor(.white)
-            .cornerRadius(6.0)
+            .cornerRadius(20)
+            .overlay(
+                            RoundedRectangle(cornerRadius: 25)
+                                .stroke(configuration.isPressed ? Color.white : Color.clear, lineWidth: 3)
+                        )
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .animation(.easeOut(duration: 0.2), value: configuration.isPressed)
+    }
+}
+
+struct WaterDropViewPreviews: PreviewProvider {
+    static var previews: some View {
+        WaterDropView()
     }
 }
