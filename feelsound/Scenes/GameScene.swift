@@ -13,7 +13,7 @@ class GameScene: SKScene {
     private var feedButton: SKSpriteNode!
     private var cleanButton: SKSpriteNode!
     private var poopTexture: SKTexture!
-    private var food: SKSpriteNode?
+    private var foods: [SKSpriteNode] = []
     
     private var walkTextures: [SKTexture] = []
     private var noseTextures: [SKTexture] = []
@@ -155,35 +155,44 @@ class GameScene: SKScene {
     }
     
     func spawnFood() {
-        guard food == nil, currentAction == .idle else { return }
-        
         let foodNode = SKSpriteNode(imageNamed: "사과")
         foodNode.size = CGSize(width: 40, height: 40)
         foodNode.position = CGPoint(
             x: CGFloat.random(in: 50...(size.width - 50)),
             y: CGFloat.random(in: 100...(size.height - 100))
         )
+        foodNode.name = "food"
+        foodNode.zPosition = 1
         addChild(foodNode)
-        food = foodNode
-        
-        moveToFood()
+        foods.append(foodNode)
+
+        // 만약 현재 아무 동작이 없다면 바로 먹이로 이동
+        if currentAction == .idle {
+            moveToFood()
+        }
     }
     
     private func moveToFood() {
-        guard let food = food, currentAction == .idle else { return }
-        
+        guard !foods.isEmpty, currentAction == .idle else { return }
+
+        // 가장 가까운 먹이 선택
+        guard let nearestFood = foods.min(by: {
+            $0.position.distance(to: character.position) < $1.position.distance(to: character.position)
+        }) else { return }
+
         currentAction = .movingToFood
-        character.xScale = food.position.x < character.position.x ? -1 : 1
-        
-        let move = SKAction.move(to: food.position, duration: 1.0)
+        character.xScale = nearestFood.position.x < character.position.x ? -1 : 1
+
+        let move = SKAction.move(to: nearestFood.position, duration: 1.0)
         let eat = SKAction.run { [weak self] in
-            guard let self = self, let food = self.food else { return }
+            guard let self = self else { return }
             self.isEating = true
             self.character.removeAllActions()
-            food.removeFromParent()
-            self.food = nil
+
+            nearestFood.removeFromParent()
+            self.foods.removeAll { $0 == nearestFood }
             self.currentAction = .eating
-            
+
             let eatTextures = [
                 SKTexture(imageNamed: "냐암"),
                 SKTexture(imageNamed: "오"),
@@ -196,14 +205,19 @@ class GameScene: SKScene {
                 SKTexture(imageNamed: "물")
             ]
             let eatingAction = SKAction.animate(with: eatTextures, timePerFrame: 0.3)
-            
+
             self.character.run(eatingAction) {
                 self.isEating = false
                 self.currentAction = .idle
                 self.runFreeMovement()
+
+                // 먹이가 더 남아있으면 계속 먹음
+                if !self.foods.isEmpty {
+                    self.moveToFood()
+                }
             }
         }
-        
+
         character.removeAllActions()
         let walkAnimation = SKAction.repeatForever(SKAction.animate(with: walkTextures, timePerFrame: 0.1))
         character.run(walkAnimation, withKey: "walk")
@@ -353,5 +367,13 @@ class GameScene: SKScene {
         case 3: return (noseTextures, "nose")
         default: return (walkTextures, "walk")
         }
+    }
+}
+
+private extension CGPoint {
+    func distance(to point: CGPoint) -> CGFloat {
+        let dx = self.x - point.x
+        let dy = self.y - point.y
+        return sqrt(dx * dx + dy * dy)
     }
 }
