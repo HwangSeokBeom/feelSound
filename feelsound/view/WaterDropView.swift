@@ -16,24 +16,34 @@ struct WaterDropView: View {
     
     var body: some View {
         ZStack {
+            // ✅ 배경 이미지 (항상 전체화면)
             Image(backgroundImage)
                 .resizable()
                 .scaledToFill()
                 .ignoresSafeArea()
+                .blur(radius: 1.4)
             
-            ForEach(raindrops) { raindrop in
-                Image(raindrop.imageName)
-                    .resizable()
-                    .frame(width: raindrop.size, height: raindrop.size)
-                    .position(x: raindrop.x, y: raindrop.y)
+            // 배경 색상 변경 (DAY와 NIGHT에 따른 opacity 효과)
+            Color.black
+                .opacity(weatherState == .day ? 0 : 0.5) // DAY와 NIGHT 상태에 따른 opacity 변화
+                .ignoresSafeArea()
+                .animation(.easeInOut(duration: 1), value: weatherState)
+            
+            ZStack {
+                ForEach(raindrops) { raindrop in
+                    Image(raindrop.imageName)
+                        .resizable()
+                        .frame(width: raindrop.size, height: raindrop.size)
+                        .position(x: raindrop.x, y: raindrop.y)
+                }
             }
             
             VStack {
                 Spacer()
                 HStack(spacing: 8) {
                     Button("DAY") {
-                        backgroundImage = "nature"
-                        startRain(with: .day)
+                        weatherState == .stop ? startRain() : nil
+                        weatherState = .day
                     }
                     .buttonStyle(BasicButtonStyle())
                     
@@ -43,24 +53,23 @@ struct WaterDropView: View {
                     .buttonStyle(BasicButtonStyle())
                     
                     Button("NIGHT") {
-                        backgroundImage = "night"
-                        startRain(with: .night)
+                        weatherState == .stop ? startRain() : nil
+                        weatherState = .night
                     }
                     .buttonStyle(BasicButtonStyle())
                 }
                 .padding(.bottom, 20)
             }
-        }
-        .onAppear {
-            startRain(with: .day)
+            .onAppear {
+                startRain()
+            }
         }
     }
     
     // 비 내리기 시작
-    private func startRain(with state: WeatherState) {
-        weatherState = state
+    private func startRain() {
         raindrops.removeAll()
-        stopRain() // 기존 타이머 정지
+        timerCancellable?.cancel() // ✅ 기존 타이머 정지 (stopRain() 호출 X)
         
         timerCancellable = Timer.publish(every: 0.05, on: .main, in: .common)
             .autoconnect()
@@ -68,13 +77,13 @@ struct WaterDropView: View {
                 self.addRaindrop()
             }
     }
-    
+
     // 비 멈추기
     private func stopRain() {
         timerCancellable?.cancel()
         timerCancellable = nil
         raindrops.removeAll()
-        weatherState = .stop
+        weatherState = .stop // ✅ 여기서만 weatherState를 .stop으로 설정
     }
     
     // 빗방울 생성
@@ -85,12 +94,12 @@ struct WaterDropView: View {
         for _ in 0..<dropCount {
             guard let randomImageName = raindropImages.randomElement() else { continue }
             
-            // ✅ 화면 전체에서 랜덤한 위치로 생성
-            let randomX = CGFloat.random(in: 0...(UIScreen.main.bounds.width))
-            let randomY = CGFloat.random(in: 0...(UIScreen.main.bounds.height - 200))
-            let size = CGFloat.random(in: 5...8)
+            let dropSize = CGFloat.random(in: 5...8) // 빗방울 크기
             
-            let newRaindrop = Raindrop(id: UUID(), imageName: randomImageName, x: randomX, y: randomY, size: size)
+            let randomX = CGFloat.random(in: 0...1000)
+            let randomY = CGFloat.random(in: -50...(UIScreen.main.bounds.height))
+            
+            let newRaindrop = Raindrop(id: UUID(), imageName: randomImageName, x: randomX, y: randomY, size: dropSize)
             raindrops.append(newRaindrop)
             
             // 빗방울 제거 (5초 후)
@@ -126,9 +135,9 @@ struct BasicButtonStyle: ButtonStyle {
             .foregroundColor(.white)
             .cornerRadius(20)
             .overlay(
-                            RoundedRectangle(cornerRadius: 25)
-                                .stroke(configuration.isPressed ? Color.white : Color.clear, lineWidth: 3)
-                        )
+                RoundedRectangle(cornerRadius: 25)
+                    .stroke(configuration.isPressed ? Color.white : Color.clear, lineWidth: 3)
+            )
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .animation(.easeOut(duration: 0.2), value: configuration.isPressed)
     }
@@ -137,5 +146,6 @@ struct BasicButtonStyle: ButtonStyle {
 struct WaterDropViewPreviews: PreviewProvider {
     static var previews: some View {
         WaterDropView()
+            .previewLayout(.sizeThatFits)
     }
 }
