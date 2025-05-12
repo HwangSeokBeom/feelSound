@@ -321,8 +321,8 @@ class GameScene: SKScene {
         let halfWidth = character.size.width / 2
         let halfHeight = character.size.height / 2
 
-        let randomDx = CGFloat.random(in: -100...100)
-        let randomDy = CGFloat.random(in: -100...100)
+        let randomDx = CGFloat.random(in: -80...80)
+        let randomDy = CGFloat.random(in: -80...80)
 
         let newX = max(bounds.minX + halfWidth, min(character.position.x + randomDx, bounds.maxX - halfWidth))
         let newY = max(bounds.minY + halfHeight, min(character.position.y + randomDy, bounds.maxY - halfHeight))
