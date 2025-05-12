@@ -7,29 +7,35 @@
 
 import SwiftUI
 import Combine
+import SpriteKit
 
 struct WaterDropView: View {
     @State private var raindrops: [Raindrop] = []
     @State private var weatherState: WeatherState = .day
+    @State private var previousWeatherState: WeatherState = .day
     @State private var timerCancellable: Cancellable? = nil
     @State private var backgroundImage: String = "nature"
+    @State private var rainScene: RainFall? = RainFall()
     
     var body: some View {
         ZStack {
-            // ✅ 배경 이미지 (항상 전체화면)
             Image(backgroundImage)
                 .resizable()
                 .scaledToFill()
                 .ignoresSafeArea()
                 .blur(radius: 1.4)
             
-            // 배경 색상 변경 (DAY와 NIGHT에 따른 opacity 효과)
             Color.black
-                .opacity(weatherState == .day ? 0 : 0.5) // DAY와 NIGHT 상태에 따른 opacity 변화
+                .opacity(weatherState == .stop ? (previousWeatherState == .night ? 0.5 : 0) : (weatherState == .night ? 0.5 : 0))
                 .ignoresSafeArea()
                 .animation(.easeInOut(duration: 1), value: weatherState)
             
             ZStack {
+                //RainFall
+                if let rainScene = rainScene {
+                    SpriteView(scene: rainScene, options: [.allowsTransparency])
+                }
+                
                 ForEach(raindrops) { raindrop in
                     Image(raindrop.imageName)
                         .resizable()
@@ -40,25 +46,38 @@ struct WaterDropView: View {
             
             VStack {
                 Spacer()
+                // RainFallLanding - 버튼 위에서 튕기게
+                if rainScene != nil {
+                    SpriteView(scene: RainFallLanding(), options: [.allowsTransparency])
+                    .offset(y: 5)                }
+                
+                
                 HStack(spacing: 8) {
                     Button("DAY") {
                         weatherState == .stop ? startRain() : nil
                         weatherState = .day
+                        previousWeatherState = .day
                     }
                     .buttonStyle(BasicButtonStyle())
                     
                     Button("STOP") {
+                        if weatherState != .stop {
+                            previousWeatherState = weatherState
+                        }
                         stopRain()
+                        weatherState = .stop
                     }
                     .buttonStyle(BasicButtonStyle())
                     
                     Button("NIGHT") {
                         weatherState == .stop ? startRain() : nil
                         weatherState = .night
+                        previousWeatherState = .night
                     }
                     .buttonStyle(BasicButtonStyle())
                 }
                 .padding(.bottom, 20)
+                
             }
             .onAppear {
                 startRain()
@@ -66,44 +85,51 @@ struct WaterDropView: View {
         }
     }
     
-    // 비 내리기 시작
     private func startRain() {
         raindrops.removeAll()
-        timerCancellable?.cancel() // ✅ 기존 타이머 정지 (stopRain() 호출 X)
+        timerCancellable?.cancel()
         
         timerCancellable = Timer.publish(every: 0.05, on: .main, in: .common)
             .autoconnect()
             .sink { _ in
                 self.addRaindrop()
             }
+        
+        rainScene = RainFall()
     }
-
-    // 비 멈추기
+    
     private func stopRain() {
         timerCancellable?.cancel()
         timerCancellable = nil
-        raindrops.removeAll()
-        weatherState = .stop // ✅ 여기서만 weatherState를 .stop으로 설정
+        
+        // RainDrop 투명도 점차 줄이기
+        withAnimation(.easeOut(duration: 3)) {
+            raindrops.removeAll()
+        }
+        
+        // RainFall SKScene 천천히 투명화
+        rainScene?.children.forEach { node in
+            node.run(SKAction.fadeOut(withDuration: 1)) {
+                self.rainScene = nil // 완전히 투명해지면 Scene 삭제
+            }
+        }
     }
     
-    // 빗방울 생성
     private func addRaindrop() {
         let raindropImages = ["waterdrop_01", "waterdrop_02", "waterdrop_03", "waterdrop_04"]
-        let dropCount = Int.random(in: 10...15) // 한 번에 생성할 빗방울 개수
+        let dropCount = 20
         
         for _ in 0..<dropCount {
             guard let randomImageName = raindropImages.randomElement() else { continue }
             
-            let dropSize = CGFloat.random(in: 5...8) // 빗방울 크기
-            
+            let dropSize = CGFloat.random(in: 1...7)
             let randomX = CGFloat.random(in: 0...1000)
             let randomY = CGFloat.random(in: -50...(UIScreen.main.bounds.height))
             
             let newRaindrop = Raindrop(id: UUID(), imageName: randomImageName, x: randomX, y: randomY, size: dropSize)
             raindrops.append(newRaindrop)
             
-            // 빗방울 제거 (5초 후)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 raindrops.removeAll { $0.id == newRaindrop.id }
             }
         }
@@ -143,9 +169,35 @@ struct BasicButtonStyle: ButtonStyle {
     }
 }
 
-struct WaterDropViewPreviews: PreviewProvider {
-    static var previews: some View {
-        WaterDropView()
-            .previewLayout(.sizeThatFits)
+class RainFall: SKScene {
+    override func sceneDidLoad() {
+        size = UIScreen.main.bounds.size
+        scaleMode = .resizeFill
+        anchorPoint = CGPoint(x: 0.5, y: 0)
+        
+        backgroundColor = .clear
+        
+        if let rainNode = SKEmitterNode(fileNamed: "Rain.sks") {
+            rainNode.position = CGPoint(x: size.width / 2, y: 1000)
+            rainNode.particlePositionRange = CGVector(dx: size.width * 2, dy: 0) // X축 전체로 확산
+            rainNode.particlePosition = CGPoint(x: 0, y: 0) // 중앙 기준으로 확산
+            rainNode.zPosition = 1
+            addChild(rainNode)
+        }
+    }
+}
+
+class RainFallLanding: SKScene {
+    override func sceneDidLoad() {
+        size = UIScreen.main.bounds.size
+        scaleMode = .resizeFill
+        anchorPoint = CGPoint(x: 0.5, y: 0) // 하단 기준
+        
+        backgroundColor = .clear
+        
+        if let node = SKEmitterNode(fileNamed: "RainFallLanding.sks") {
+            node.particlePositionRange = CGVector(dx: 240, dy: 0) // X축 전체로 확산
+            addChild(node)
+        }
     }
 }
