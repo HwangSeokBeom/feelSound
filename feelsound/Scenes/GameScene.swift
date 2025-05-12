@@ -204,7 +204,7 @@ class GameScene: SKScene {
         currentAction = .movingToFood
         character.xScale = nearestFood.position.x < character.position.x ? -1 : 1
 
-        let move = SKAction.move(to: nearestFood.position, duration: 1.0)
+        let move = SKAction.move(to: nearestFood.position, duration: 2.0)
         let eat = SKAction.run { [weak self] in
             guard let self = self else { return }
             self.isEating = true
@@ -313,7 +313,7 @@ class GameScene: SKScene {
             return
         }
 
-        if Int.random(in: 0..<5) == 0 {
+        if Int.random(in: 0..<20) == 0 {
             dropPoop()
         }
 
@@ -330,7 +330,7 @@ class GameScene: SKScene {
 
         character.xScale = destination.x < character.position.x ? -1 : 1
 
-        let move = SKAction.move(to: destination, duration: 1.0)
+        let move = SKAction.move(to: destination, duration: 2.0)
         let wait = SKAction.wait(forDuration: 0.5)
 
         character.removeAction(forKey: "walk")
