@@ -13,7 +13,9 @@ class SlimeScene: SKScene {
     override func didMove(to view: SKView) {
         backgroundColor = .white
         physicsWorld.gravity = .zero
-        slime = SlimeNode(radius: 80)
+
+        let texture = SKTexture(imageNamed: "glitter_slime")  // 💡 glitter 텍스처 추가 필요
+        slime = SlimeNode(radius: 100, texture: texture)
         slime.position = CGPoint(x: size.width / 2, y: size.height / 2)
         addChild(slime)
     }
@@ -21,9 +23,9 @@ class SlimeScene: SKScene {
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
-        slime.reactToTouch(at: location) 
+        slime.reactToTouch(at: location)
     }
-    
+
     override func update(_ currentTime: TimeInterval) {
         slime.updateElasticity()
     }

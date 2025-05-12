@@ -11,22 +11,28 @@ class SlimeNode: SKShapeNode {
     private var points: [CGPoint] = []
     private var originPoints: [CGPoint] = []
 
-    init(radius: CGFloat) {
+    init(radius: CGFloat, texture: SKTexture) {
         super.init()
+
+        // 점 생성 (12각형)
         for i in 0..<12 {
             let angle = CGFloat(i) / 12 * 2 * .pi
             let point = CGPoint(x: radius * cos(angle), y: radius * sin(angle))
             points.append(point)
             originPoints.append(point)
         }
+
         updatePath()
-        fillColor = .green
+
+        // 텍스처와 컬러 설정
+        fillColor = .white
+        fillTexture = texture
+        strokeColor = .clear
+        zPosition = 1
     }
 
-    func deform(at index: Int, to position: CGPoint) {
-        guard index < points.count else { return }
-        points[index] = position
-        updatePath()
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 
     func reactToTouch(at point: CGPoint) {
@@ -45,20 +51,18 @@ class SlimeNode: SKShapeNode {
         deform(at: closestIndex, to: localPoint)
     }
 
+    func deform(at index: Int, to position: CGPoint) {
+        guard index < points.count else { return }
+        points[index] = position
+        updatePath()
+    }
+
     func updateElasticity() {
-        let restoringSpeed: CGFloat = 0.1  // 탄성 속도 조절
-
+        let speed: CGFloat = 0.1
         for i in 0..<points.count {
-            let current = points[i]
-            let origin = originPoints[i]
-
-            let dx = origin.x - current.x
-            let dy = origin.y - current.y
-
-            points[i].x += dx * restoringSpeed
-            points[i].y += dy * restoringSpeed
+            points[i].x += (originPoints[i].x - points[i].x) * speed
+            points[i].y += (originPoints[i].y - points[i].y) * speed
         }
-
         updatePath()
     }
 
@@ -71,9 +75,5 @@ class SlimeNode: SKShapeNode {
         }
         path.close()
         self.path = path.cgPath
-    }
-
-    required init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
     }
 }
