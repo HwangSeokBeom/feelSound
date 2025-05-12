@@ -91,9 +91,9 @@ class GameScene: SKScene {
     private func loadTextures() {
         walkTextures = (1...8).map { SKTexture(imageNamed: "움직임_\($0)") }
         noseTextures = (1...3).map { SKTexture(imageNamed: "코움직임_\($0)") }
-        hornTextures = (1...8).map { SKTexture(imageNamed: "뿔움직임_\($0)") }
+        //hornTextures = (1...8).map { SKTexture(imageNamed: "뿔움직임_\($0)") }
         earTextures = (1...8).map { SKTexture(imageNamed: "귀 쫑긋_\($0)") }
-        legTextures = (1...8).map { SKTexture(imageNamed: "누웠을때 다리를 움직이는_\($0)") }
+        //legTextures = (1...8).map { SKTexture(imageNamed: "누웠을때 다리를 움직이는_\($0)") }
         wheelRunTextures = (1...8).map { SKTexture(imageNamed: "쳇바퀴_\($0)") }
         poopTexture = SKTexture(imageNamed: "임시똥")
     }
@@ -271,9 +271,37 @@ class GameScene: SKScene {
         case "outdoor":
             print("야외 버튼 클릭됨!")
             // 야외 씬으로 이동하거나 애니메이션 등 추가
+        case nil:
+            if tappedNode == character {
+                runLegOrHornAnimation {
+                    self.runFreeMovement()
+                }
+            }
+            
         default:
             break
         }
+    }
+    
+    private func runLegOrHornAnimation(completion: @escaping () -> Void) {
+        let textures: [SKTexture]
+        let key: String
+
+        if Bool.random() {
+            textures = legTextures
+            key = "leg"
+        } else {
+            textures = hornTextures
+            key = "horn"
+        }
+
+        character.removeAllActions()
+        let animation = SKAction.animate(with: textures, timePerFrame: 0.1)
+        let sequence = SKAction.sequence([
+            animation,
+            SKAction.run(completion)
+        ])
+        character.run(sequence, withKey: key)
     }
     
     private func toggleWheelRunning() {
