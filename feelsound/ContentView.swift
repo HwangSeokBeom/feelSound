@@ -54,6 +54,13 @@ struct ContentView: View {
                     case .sampleView3:
                         FortuneCookieView()
                             .toolbar(.hidden)
+                    case .sampleView4:
+
+                    case .sampleView5:
+
+                    case .sampleView6:
+                        SlimeView()
+                            .toolbar(.hidden)
                     }
                 }
                 .navigationBarHidden(true)
