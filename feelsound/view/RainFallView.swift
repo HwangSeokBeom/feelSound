@@ -53,7 +53,7 @@ struct Vector2 {
     var y: CGFloat
 }
 
-struct RainDrop: Identifiable {
+struct WaterDrop: Identifiable {
     let id = UUID()
     var position: Vector2
     var velocity: Vector2
@@ -97,12 +97,12 @@ struct RainDrop: Identifiable {
             
             // Update frame count for splatter animation
             splatterFrameCount += 1
-            isDead = splatterFrameCount >= RainDrop.maxSplatterFrameCount
+            isDead = splatterFrameCount >= WaterDrop.maxSplatterFrameCount
         }
     }
     
     mutating func createSplatters(screenSize: CGSize) {
-        for _ in 0..<RainDrop.maxSplatterPerRaindrop {
+        for _ in 0..<WaterDrop.maxSplatterPerRaindrop {
             // Generate random angle for the splatter (20-70° or 110-160°)
             let useFirstRange = Bool.random()
             let angleBounce = useFirstRange ?
@@ -112,8 +112,8 @@ struct RainDrop: Identifiable {
             let angleBounceRadians = angleBounce * (CGFloat.pi / 180.0)
             
             // Calculate velocity components
-            let velX = RainDrop.splatterStartingVelocity * cos(angleBounceRadians)
-            let velY = -RainDrop.splatterStartingVelocity * sin(angleBounceRadians)
+            let velX = WaterDrop.splatterStartingVelocity * cos(angleBounceRadians)
+            let velY = -WaterDrop.splatterStartingVelocity * sin(angleBounceRadians)
             
             let splatterVelocity = Vector2(x: velX, y: velY)
             let splatter = Splatter(position: position, velocity: splatterVelocity, radius: radius * 0.7)
@@ -145,7 +145,7 @@ struct Splatter: Identifiable {
 // MARK: - Rain System
 
 class RainSystem: ObservableObject {
-    @Published var raindrops: [RainDrop] = []
+    @Published var raindrops: [WaterDrop] = []
     
     private var screenSize: CGSize = .zero
     private var lastUpdateTime: Date = Date()
@@ -198,7 +198,7 @@ class RainSystem: ObservableObject {
         }
     }
     
-    private func createRaindrop() -> RainDrop {
+    private func createRaindrop() -> WaterDrop {
         // Extra width to account for wind effect
         let extraWidth = screenSize.width / 3
         
@@ -214,10 +214,10 @@ class RainSystem: ObservableObject {
         let trailLength = CGFloat.random(in: 30...100)
         
         // Calculate velocity
-        let velocityX = RainDrop.windMultiplier * windDirectionFactor
-        let velocityY = RainDrop.terminalVelocity
+        let velocityX = WaterDrop.windMultiplier * windDirectionFactor
+        let velocityY = WaterDrop.terminalVelocity
         
-        return RainDrop(
+        return WaterDrop(
             position: Vector2(x: x, y: y),
             velocity: Vector2(x: velocityX, y: velocityY),
             radius: radius,
@@ -229,7 +229,7 @@ class RainSystem: ObservableObject {
 // MARK: - Views
 
 struct RainDropView: View {
-    let raindrop: RainDrop
+    let raindrop: WaterDrop
     let opacity: Double
     
     var body: some View {
