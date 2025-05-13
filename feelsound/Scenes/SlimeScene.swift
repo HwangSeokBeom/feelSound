@@ -6,27 +6,37 @@
 //
 
 import SpriteKit
+import AVFoundation
 
 class SlimeScene: SKScene {
     private var slime: SlimeNode!
 
     override func didMove(to view: SKView) {
         backgroundColor = .white
-        physicsWorld.gravity = .zero
 
-        let texture = SKTexture(imageNamed: "glitter_slime")  // 💡 glitter 텍스처 추가 필요
-        slime = SlimeNode(radius: 100, texture: texture)
-        slime.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        let screenSize = view.bounds.size
+        let radius = hypot(screenSize.width, screenSize.height) / 2.0  // 대각선 기준
+
+        let texture = SKTexture(imageNamed: "glitter_slime")
+        slime = SlimeNode(radius: radius, texture: texture)
+
+        slime.position = CGPoint(x: screenSize.width / 2, y: screenSize.height / 2)
         addChild(slime)
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first else { return }
-        let location = touch.location(in: self)
-        slime.reactToTouch(at: location)
+        guard let location = touches.first?.location(in: slime) else { return }
+        slime.updateTouchUniform(at: location)     // 🔥 shader에 터치 좌표 전달
+        slime.reactToTouch(at: location)           // 기존 슬라임 변형
     }
 
+    // SlimeScene.swift 내 update
     override func update(_ currentTime: TimeInterval) {
-        slime.updateElasticity()
+        slime.updateElasticity(currentTime: currentTime)
+
+        if let shader = slime.slimeSprite.shader,
+           let timeUniform = shader.uniformNamed("u_time") {
+            timeUniform.floatValue = Float(currentTime)
+        }
     }
 }

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>particleTexture</key>
+    <string>spark.png</string>
+    <key>birthRate</key>
+    <real>30</real>
+    <key>lifetime</key>
+    <real>3</real>
+    <key>speed</key>
+    <real>20</real>
+    <key>speedRange</key>
+    <real>10</real>
+    <key>alpha</key>
+    <real>0.6</real>
+    <key>alphaSpeed</key>
+    <real>-0.2</real>
+    <key>scale</key>
+    <real>0.3</real>
+    <key>scaleRange</key>
+    <real>0.2</real>
+    <key>scaleSpeed</key>
+    <real>-0.05</real>
+    <key>colorRed</key>
+    <real>0.66</real>
+    <key>colorGreen</key>
+    <real>0.90</real>
+    <key>colorBlue</key>
+    <real>1.0</real>
+    <key>emissionAngle</key>
+    <real>90</real>
+    <key>emissionAngleRange</key>
+    <real>180</real>
+    <key>positionRangeX</key>
+    <real>20</real>
+    <key>positionRangeY</key>
+    <real>20</real>
+    <key>blendMode</key>
+    <string>additive</string>
+    <key>affectedByGravity</key>
+    <true/>
+</dict>
+</plist>

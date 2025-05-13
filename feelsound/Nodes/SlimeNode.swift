@@ -1,34 +1,60 @@
-//
 //  SlimeNode.swift
 //  feelsound
 //
 //  Created by Hwangseokbeom on 5/12/25.
-//
 
 import SpriteKit
+import simd
 
-class SlimeNode: SKShapeNode {
-    private var points: [CGPoint] = []
+class SlimeNode: SKCropNode {
+    private var shapeMask: SKShapeNode = SKShapeNode()
+    let slimeSprite: SKSpriteNode
+    private var controlPoints: [CGPoint] = []
     private var originPoints: [CGPoint] = []
+    private var velocities: [CGVector] = []
 
     init(radius: CGFloat, texture: SKTexture) {
+        // 1. 슬라임 텍스처 sprite 생성
+        slimeSprite = SKSpriteNode(texture: texture, color: .clear, size: CGSize(width: radius * 2, height: radius * 2))
+        slimeSprite.zPosition = 0
+
         super.init()
 
-        // 점 생성 (12각형)
-        for i in 0..<12 {
-            let angle = CGFloat(i) / 12 * 2 * .pi
-            let point = CGPoint(x: radius * cos(angle), y: radius * sin(angle))
-            points.append(point)
-            originPoints.append(point)
+        // 2. 셰이더 부착 (TeasEar 스타일 파동 추가)
+        let shaderSource = """
+        void main() {
+            vec2 uv = v_tex_coord;
+
+            vec2 center = u_touch;
+            float dist = distance(uv, center);
+
+            float ripple = sin((dist * 40.0 - u_time * 6.0)) * 0.015 / (dist * 40.0 + 1.0);
+            uv.x += ripple;
+            uv.y += ripple * 0.6;
+
+            uv.x += sin((uv.y + u_time * 1.5) * 15.0) * 0.01;
+
+            gl_FragColor = texture2D(u_texture, uv);
         }
+        """
 
-        updatePath()
+        let shader = SKShader(source: shaderSource)
+        shader.uniforms = [
+            SKUniform(name: "u_time", float: 0.0),
+            SKUniform(name: "u_touch", vectorFloat2: vector_float2(0.5, 0.5))
+        ]
+        slimeSprite.shader = shader
 
-        // 텍스처와 컬러 설정
-        fillColor = .white
-        fillTexture = texture
-        strokeColor = .clear
-        zPosition = 1
+        // 3. 곡선 마스크 생성
+        shapeMask.fillColor = .white
+        shapeMask.strokeColor = .clear
+        shapeMask.zPosition = 1
+
+        addChild(slimeSprite)
+        maskNode = shapeMask
+
+        generateCirclePoints(radius: radius)
+        updateMaskPath()
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -36,44 +62,81 @@ class SlimeNode: SKShapeNode {
     }
 
     func reactToTouch(at point: CGPoint) {
-        let localPoint = convert(point, from: parent!)
-        var closestIndex = 0
-        var closestDistance = CGFloat.greatestFiniteMagnitude
-
-        for (i, p) in points.enumerated() {
-            let distance = hypot(p.x - localPoint.x, p.y - localPoint.y)
-            if distance < closestDistance {
-                closestIndex = i
-                closestDistance = distance
+        for i in 0..<controlPoints.count {
+            let dist = hypot(controlPoints[i].x - point.x, controlPoints[i].y - point.y)
+            if dist < 100 {
+                let offset = CGVector(dx: point.x - controlPoints[i].x,
+                                      dy: point.y - controlPoints[i].y)
+                velocities[i].dx += offset.dx * 0.4
+                velocities[i].dy += offset.dy * 0.4
             }
         }
-
-        deform(at: closestIndex, to: localPoint)
     }
 
-    func deform(at index: Int, to position: CGPoint) {
-        guard index < points.count else { return }
-        points[index] = position
-        updatePath()
-    }
+    func updateElasticity(currentTime: TimeInterval) {
+        for i in 0..<controlPoints.count {
+            let spring = CGVector(dx: originPoints[i].x - controlPoints[i].x,
+                                  dy: originPoints[i].y - controlPoints[i].y)
+            velocities[i].dx += spring.dx * 0.1
+            velocities[i].dy += spring.dy * 0.1
+            velocities[i].dx *= 0.85
+            velocities[i].dy *= 0.85
 
-    func updateElasticity() {
-        let speed: CGFloat = 0.1
-        for i in 0..<points.count {
-            points[i].x += (originPoints[i].x - points[i].x) * speed
-            points[i].y += (originPoints[i].y - points[i].y) * speed
+            controlPoints[i].x += velocities[i].dx
+            controlPoints[i].y += velocities[i].dy
         }
-        updatePath()
+        updateMaskPath()
+
+        // shader 시간 업데이트
+        if let shader = slimeSprite.shader,
+           let timeUniform = shader.uniformNamed("u_time") {
+            timeUniform.floatValue = Float(currentTime)
+        }
     }
 
-    private func updatePath() {
+    func updateTouchUniform(at point: CGPoint) {
+        let size = slimeSprite.size
+        let normalized = vector_float2(
+            Float((point.x + size.width / 2) / size.width),
+            Float((point.y + size.height / 2) / size.height)
+        )
+
+        if let shader = slimeSprite.shader,
+           let touchUniform = shader.uniformNamed("u_touch") {
+            touchUniform.vectorFloat2Value = normalized
+        }
+    }
+
+    private func updateMaskPath() {
         let path = UIBezierPath()
-        guard let first = points.first else { return }
-        path.move(to: first)
-        for i in 1..<points.count {
-            path.addLine(to: points[i])
+        guard controlPoints.count > 1 else { return }
+
+        for i in 0..<controlPoints.count {
+            let current = controlPoints[i]
+            let next = controlPoints[(i + 1) % controlPoints.count]
+            let mid = CGPoint(x: (current.x + next.x) / 2, y: (current.y + next.y) / 2)
+
+            if i == 0 {
+                path.move(to: mid)
+            }
+            path.addQuadCurve(to: mid, controlPoint: current)
         }
         path.close()
-        self.path = path.cgPath
+        shapeMask.path = path.cgPath
+    }
+
+    private func generateCirclePoints(radius: CGFloat) {
+        controlPoints.removeAll()
+        originPoints.removeAll()
+        velocities.removeAll()
+
+        let count = 24
+        for i in 0..<count {
+            let angle = CGFloat(i) / CGFloat(count) * .pi * 2
+            let point = CGPoint(x: cos(angle) * radius, y: sin(angle) * radius)
+            controlPoints.append(point)
+            originPoints.append(point)
+            velocities.append(.zero)
+        }
     }
 }
