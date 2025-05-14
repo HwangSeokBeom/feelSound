@@ -28,21 +28,26 @@ vertex VertexOut slime_vertex(VertexIn in [[stage_in]]) {
 }
 
 fragment float4 slime_fragment(VertexOut in [[stage_in]],
-                               constant float2& u_touch [[buffer(0)]],
+                               constant float3* touchInputs [[buffer(2)]],
+                               constant int& maxTouches [[buffer(3)]],
                                constant float& u_time [[buffer(1)]],
                                texture2d<float> texture [[texture(0)]],
                                sampler s [[sampler(0)]]) {
     float2 uv = in.uv;
+    float2 screenPos = in.screenPos;
 
-    float dist = distance(in.screenPos, u_touch);
+    float2 offset = float2(0.0);
+    for (int i = 0; i < maxTouches; ++i) {
+        float2 pos = touchInputs[i].xy;
+        float force = touchInputs[i].z;
 
-    float strength = 0.02;
-    float frequency = 40.0;
-    float speed = 6.0;
+        float dist = distance(screenPos, pos);
+        float ripple = sin(dist * 40.0 - u_time * 6.0) * 0.02 / (dist * 40.0 + 1.0);
+        ripple *= force;
 
-    float ripple = sin(dist * frequency - u_time * speed) * strength / (dist * frequency + 1.0);
-    uv.x += ripple;
-    uv.y += ripple * 0.6;
+        offset.x += ripple;
+        offset.y += ripple * 0.6;
+    }
 
-    return texture.sample(s, uv);
+    return texture.sample(s, uv + offset);
 }
