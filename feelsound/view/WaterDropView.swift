@@ -8,64 +8,52 @@
 import SwiftUI
 import Combine
 import SpriteKit
+import CoreMotion
 
 struct WaterDropView: View {
+    @EnvironmentObject var router: Router
+    
     @State private var raindrops: [Raindrop] = []
     @State private var weatherState: WeatherState = .day
     @State private var previousWeatherState: WeatherState = .day
-    @State private var timerCancellable: Cancellable? = nil
     @State private var rainScene: RainFall? = RainFall()
-    @State private var isAnimating = false
     @State private var timer: Timer?
-    @State private var streamTimer: Timer?
     @State private var waterStreamDrops: [StreamDrop] = []
-    @State private var exclusionArea: CGRect? = nil
-    
-    // 빗물 생성 간격 (초)
-    private let creationInterval: Double = 0.01
-    // 최대 빗물 개수
-    private let maxRaindrops: Int = 500
-    // 물줄기 생성 간격 (초)
-    private let streamDropInterval: Double = 0.01
-    // 새로운 물줄기 생성 간격 (초)
-    private let newStreamInterval: Double = 2.0
-    
-    // 물방울 이미지 배열
-    let waterdropImages = ["waterdrop_01", "waterdrop_02", "waterdrop_03", "waterdrop_04"]
-    
-    // 활성 물줄기 스트림 관리 (UUID: 타이머 매핑)
     @State private var activeStreams: [UUID: StreamInfo] = [:]
+    
+    @StateObject private var motionManager = MotionManager()
+    
+    // Constants
+    private let maxRaindrops: Int = 300
+    private let waterdropImages = ["waterdrop_01", "waterdrop_02", "waterdrop_03", "waterdrop_04"]
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // 배경 이미지 - 우선순위 높이기
+                // Background
                 Image("nature")
                     .resizable()
                     .scaledToFill()
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .edgesIgnoringSafeArea(.all)
                     .blur(radius: 4)
-                    .zIndex(0) // 명시적으로 zIndex 설정
                 
-                // 밤 효과 (어두운 오버레이)
+                // Night effect overlay
                 Color.black
-                    .opacity(weatherState == .stop ? (previousWeatherState == .night ? 0.5 : 0) : (weatherState == .night ? 0.5 : 0))
+                    .opacity(weatherState == .night ? 0.5 : 0)
                     .edgesIgnoringSafeArea(.all)
-                    .zIndex(1)
                     .animation(.easeInOut(duration: 1), value: weatherState)
                 
-                // 빗물과 물줄기 컨테이너
+                // Rain effects
                 ZStack {
-                    // SpriteKit 비 효과 - 투명 배경 강제 적용
+                    // SpriteKit rain
                     if let rainScene = rainScene {
                         SpriteView(scene: rainScene, options: [.allowsTransparency])
                             .frame(width: geometry.size.width, height: geometry.size.height)
-                            .zIndex(2)
-                            .allowsHitTesting(false) // 터치 이벤트 통과
+                            .allowsHitTesting(false)
                     }
                     
-                    // 흘러내리는 물방울들
+                    // Stream drops
                     ForEach(waterStreamDrops) { drop in
                         Image(drop.imageName)
                             .resizable()
@@ -74,9 +62,8 @@ struct WaterDropView: View {
                             .opacity(drop.opacity)
                             .position(x: drop.position.x, y: drop.position.y)
                     }
-                    .zIndex(3)
                     
-                    // 빗물들 (고정된 물방울)
+                    // Static raindrops
                     ForEach(raindrops) { raindrop in
                         Image(raindrop.imageName)
                             .resizable()
@@ -84,154 +71,133 @@ struct WaterDropView: View {
                             .frame(width: raindrop.size, height: raindrop.size)
                             .position(raindrop.position)
                     }
-                    .zIndex(4)
                 }
-                .zIndex(2)
                 
-                // UI 요소 컨테이너 - 최상단에 배치
+                // UI controls
                 VStack {
                     Spacer()
                     
-                    // SpriteKit 비가 바닥에 튕기는 효과
+                    // Splash effect
                     if rainScene != nil {
                         SpriteView(scene: RainFallLanding(), options: [.allowsTransparency])
                             .frame(width: geometry.size.width, height: 50)
-                            .offset(y: 5)
                     }
                     
-                    // 버튼 그룹 - 명확한 스타일로 강조
+                    // Control buttons
                     HStack(spacing: 12) {
                         Button("DAY") {
-                            if weatherState == .stop {
-                                startRainAnimation(in: geometry.size)
-                                startRandomStreams(in: geometry.size)
-                            }
-                            weatherState = .day
-                            previousWeatherState = .day
+                            setWeatherState(.day)
                         }
                         .buttonStyle(BasicButtonStyle())
                         
                         Button("STOP") {
-                            if weatherState != .stop {
-                                previousWeatherState = weatherState
-                            }
+                            previousWeatherState = weatherState
                             stopRainAnimation()
                             weatherState = .stop
                         }
                         .buttonStyle(BasicButtonStyle())
                         
                         Button("NIGHT") {
-                            if weatherState == .stop {
-                                startRainAnimation(in: geometry.size)
-                                startRandomStreams(in: geometry.size)
-                            }
-                            weatherState = .night
-                            previousWeatherState = .night
+                            setWeatherState(.night)
                         }
                         .buttonStyle(BasicButtonStyle())
                     }
                     .padding(.bottom, 30)
-                    .shadow(color: .black.opacity(0.5), radius: 5, x: 0, y: 2)
                 }
-                .zIndex(5) // 최상위 레이어
             }
             .onAppear {
-                // 애니메이션 시작
+                motionManager.startDeviceMotionUpdates()
                 startRainAnimation(in: geometry.size)
                 startRandomStreams(in: geometry.size)
             }
             .onDisappear {
+                motionManager.stopDeviceMotionUpdates()
                 stopRainAnimation()
             }
         }
-        .edgesIgnoringSafeArea(.all) // 전체 화면 사용
+        .edgesIgnoringSafeArea(.all)
     }
     
-    // 빗물 애니메이션 시작
+    private func setWeatherState(_ state: WeatherState) {
+        if weatherState == .stop {
+            startRainAnimation(in: UIScreen.main.bounds.size)
+            startRandomStreams(in: UIScreen.main.bounds.size)
+        }
+        weatherState = state
+        previousWeatherState = state
+    }
+    
+    // Start rain animation
     private func startRainAnimation(in size: CGSize) {
         raindrops.removeAll()
         waterStreamDrops.removeAll()
         
-        // 기존 타이머 정리
+        // Clear timers
         timer?.invalidate()
-        streamTimer?.invalidate()
-        timerCancellable?.cancel()
         
-        // 모든 물줄기 타이머 정리
         for stream in activeStreams.values {
             stream.timer?.invalidate()
         }
         activeStreams.removeAll()
         
-        // 물방울 생성 타이머
-        timer = Timer.scheduledTimer(withTimeInterval: 0.001, repeats: true) { _ in
-            // 빗물 생성 (더 긴 간격으로)
-            if Double.random(in: 0...1) < 0.1 { // 10% 확률로 물방울 생성
-                if self.raindrops.count < self.maxRaindrops {
-                    self.createRaindrop(in: size)
-                }
+        // Create raindrop generation timer
+        timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { _ in
+            // Create raindrops with 10% probability
+            if Double.random(in: 0...1) < 0.1 && self.raindrops.count < self.maxRaindrops {
+                self.createRaindrop(in: size)
             }
             
-            // 페이드 아웃 효과와 충돌 체크
             self.checkStreamCollisions()
-            
-            // 물줄기 방울들 중 화면 밖으로 나간 것들도 페이드 아웃 처리
             self.checkOutOfBoundsDrops(in: size)
         }
         
-        // SpriteKit 비 효과 생성 - 투명 배경 보장
+        // Setup SpriteKit rain scene
         let scene = RainFall()
         scene.backgroundColor = .clear
+        scene.motionManager = motionManager
         rainScene = scene
     }
     
-    // 빗물 애니메이션 중지
+    // Stop rain animation
     private func stopRainAnimation() {
         timer?.invalidate()
         timer = nil
         
-        streamTimer?.invalidate()
-        streamTimer = nil
-        
-        timerCancellable?.cancel()
-        timerCancellable = nil
-        
-        // 모든 물줄기 타이머 정리
+        // Clear active streams
         for stream in activeStreams.values {
             stream.timer?.invalidate()
         }
         activeStreams.removeAll()
         
-        // 점진적으로 사라지게 처리
-        withAnimation(.easeOut(duration: 3)) {
+        // Fade out effects
+        withAnimation(.easeOut(duration: 2)) {
             raindrops.removeAll()
         }
         
-        // 물줄기 방울 페이드 아웃 효과 적용
+        // Mark all water stream drops for fading
         for i in 0..<waterStreamDrops.count {
             waterStreamDrops[i].isFading = true
         }
         
-        // RainFall SKScene 천천히 투명화
+        // Fade out SpriteKit scene
         rainScene?.children.forEach { node in
             node.run(SKAction.fadeOut(withDuration: 1)) {
-                self.rainScene = nil // 완전히 투명해지면 Scene 삭제
+                self.rainScene = nil
             }
         }
     }
     
-    // 새로운 빗물 생성
+    // Create a new raindrop
     private func createRaindrop(in size: CGSize) {
-        // 랜덤 이미지 선택
         let randomImage = waterdropImages.randomElement() ?? "waterdrop_01"
         
         let newRaindrop = Raindrop(
             id: UUID(),
             position: CGPoint(
                 x: CGFloat.random(in: 20...(size.width - 20)),
-                y: CGFloat.random(in: 0...size.height) // 화면 전체 높이에서 랜덤하게 생성
+                y: CGFloat.random(in: 0...size.height)
             ),
-            size: CGFloat.random(in: 5...15),//CGFloat.random(in: 5...8),
+            size: CGFloat.random(in: 5...15),
             speed: CGFloat.random(in: 2...5),
             creationTime: Date(),
             imageName: randomImage
@@ -240,115 +206,98 @@ struct WaterDropView: View {
         raindrops.append(newRaindrop)
     }
     
-    // 랜덤 물줄기 시작 (독립적으로 실행)
+    // Start random water streams
     private func startRandomStreams(in size: CGSize) {
-        // 이전 타이머 정리
-        streamTimer?.invalidate()
-        
-        streamTimer = Timer.scheduledTimer(withTimeInterval: newStreamInterval, repeats: true) { _ in
-            // 랜덤 위치에서 물줄기 시작
-            let randomX = CGFloat.random(in: 20...(size.width - 20))
-            let randomY = CGFloat.random(in: 20...(size.height / 2)) // 화면 상단 절반에서 시작
+        // Create a new stream every 0.5-1 seconds
+        Timer.scheduledTimer(withTimeInterval: Double.random(in: 0.5...1), repeats: true) { timer in
+            // Only create new streams if not in STOP mode
+            guard self.weatherState != .stop else {
+                timer.invalidate()
+                return
+            }
             
-            startWaterdropStream(at: CGPoint(x: randomX, y: randomY), in: size)
+            let randomX = CGFloat.random(in: 20...(size.width - 20))
+            let randomY = CGFloat.random(in: 20...(size.height / 2))
+            
+            self.startWaterdropStream(at: CGPoint(x: randomX, y: randomY), in: size)
         }
     }
     
-    // 물방울 스트림 시작
+    // Start a water stream
     private func startWaterdropStream(at position: CGPoint, in size: CGSize) {
         let streamId = UUID()
         var currentPosition = position
+        let yVelocity = 30.0
         
-        // 물줄기의 방향 결정 (대각선 포함)
-        // 각도는 라디안 단위: 0.5π(90°)는 수직 아래, 0.3π~0.7π는 대각선 범위
-        let angle = CGFloat.random(in: 0.3 * .pi...0.7 * .pi)
-        let xVelocity = cos(angle) * 20  // X 방향 속도
-        let yVelocity = sin(angle) * 30  // Y 방향 속도 (항상 양수로 아래쪽)
-        
-        // 물줄기 정보 생성
-        let streamTimer = Timer.scheduledTimer(withTimeInterval: streamDropInterval, repeats: true) { timer in
-            // 랜덤 이미지 선택
-            let randomImage = waterdropImages.randomElement() ?? "waterdrop_01"
-            // 약간의 무작위성 추가 (물방울마다 약간의 편차)
-            let randomOffset = CGPoint(
-                x: CGFloat.random(in: -5...5),
-                y: CGFloat.random(in: -5...5)
-            )
+        let streamTimer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { timer in
+            // Get random image and create slight offset
+            let randomImage = self.waterdropImages.randomElement() ?? "waterdrop_01"
+            let randomOffset = CGPoint(x: CGFloat.random(in: -5...5), y: CGFloat.random(in: -5...5))
             
-            // 물줄기 방울 생성
+            // Update X velocity based on device tilt
+            let currentXVelocity = self.getXVelocityFromMotion()
+            
+            // Create new stream drop
             let newDrop = StreamDrop(
                 id: UUID(),
-                position: CGPoint(
-                    x: currentPosition.x + randomOffset.x,
-                    y: currentPosition.y + randomOffset.y
-                ),
+                position: CGPoint(x: currentPosition.x + randomOffset.x, y: currentPosition.y + randomOffset.y),
                 imageName: randomImage,
-                creationTime: Date(),
-                opacity: 1.0,
-                isFading: false
+                creationTime: Date()
             )
             
-            // 물줄기 방울 추가
-            waterStreamDrops.append(newDrop)
+            self.waterStreamDrops.append(newDrop)
             
-            // 이전 물방울 제거 (너무 오래된 물방울)
-            let currentTime = Date()
-            for i in 0..<waterStreamDrops.count {
-                // 아직 페이드 아웃이 시작되지 않은 오래된 물방울 찾기
-                if !waterStreamDrops[i].isFading &&
-                    currentTime.timeIntervalSince(waterStreamDrops[i].creationTime) > 0.1 {
-                    // 페이드 아웃 시작으로 표시
-                    waterStreamDrops[i].isFading = true
+            // Set timer to start fading the drop after 2 seconds
+            Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
+                if let index = self.waterStreamDrops.firstIndex(where: { $0.id == newDrop.id }) {
+                    self.waterStreamDrops[index].isFading = true
                 }
             }
             
-            // 위치 업데이트 (대각선 방향으로)
-            currentPosition.x += xVelocity
+            // Update current position
+            currentPosition.x += currentXVelocity
             currentPosition.y += yVelocity
             
-            // 화면 밖으로 나가면 타이머 중지
-            if currentPosition.y > size.height + 30 ||
-               currentPosition.x < -30 ||
-               currentPosition.x > size.width + 30 {
+            // Stop if out of bounds
+            if currentPosition.y > size.height + 30 || currentPosition.x < -30 || currentPosition.x > size.width + 30 {
                 timer.invalidate()
-                activeStreams[streamId] = nil
+                self.activeStreams[streamId] = nil
             }
         }
         
-        // 활성 스트림에 추가
         activeStreams[streamId] = StreamInfo(timer: streamTimer)
     }
     
-    // 화면 밖으로 나간 물방울 체크
+    // Calculate X velocity based on device tilt
+    private func getXVelocityFromMotion() -> CGFloat {
+        let roll = motionManager.roll
+        let maxVelocity: CGFloat = 30.0
+        let velocityFactor: CGFloat = 20.0
+        
+        return max(-maxVelocity, min(maxVelocity, roll * velocityFactor))
+    }
+    
+    // Check for drops that have gone out of bounds
     private func checkOutOfBoundsDrops(in size: CGSize) {
         for i in 0..<waterStreamDrops.count {
             let drop = waterStreamDrops[i]
             
-            // 화면 밖으로 나간 물방울이면서 아직 페이드 아웃 중이 아닌 경우
-            if (drop.position.y > size.height + 30 ||
-                drop.position.x < -30 ||
+            if (drop.position.y > size.height + 30 || drop.position.x < -30 ||
                 drop.position.x > size.width + 30) && !drop.isFading {
                 waterStreamDrops[i].isFading = true
             }
         }
+        
+        // Remove completely faded drops
+        updateFadingDrops()
     }
     
-    // 물줄기와 빗물의 충돌 체크 및 물줄기 간 충돌 체크
+    // Check for collisions between streams and raindrops
     private func checkStreamCollisions() {
         var raindropsToRemove = Set<UUID>()
-        var streamDropsToFade = Set<UUID>()  // 페이드 아웃할 물방울들
+        let streamDropsToFade = Set<UUID>()
         
-        // 먼저 생성된 물줄기와 나중에 생성된 물줄기 구분을 위해 정렬
-        let sortedStreamDrops = waterStreamDrops.sorted { $0.creationTime < $1.creationTime }
-        
-        // 물줄기와 빗물 충돌 체크
-        for streamDrop in sortedStreamDrops {
-            // 이미 페이드 아웃 중인 물방울은 건너뜀
-            if streamDrop.isFading {
-                continue
-            }
-            
-            // 스트림 물방울의 대략적인 충돌 범위
+        for streamDrop in waterStreamDrops where !streamDrop.isFading {
             let streamRect = CGRect(
                 x: streamDrop.position.x - 12,
                 y: streamDrop.position.y - 12,
@@ -356,9 +305,8 @@ struct WaterDropView: View {
                 height: 24
             )
             
-            // 빗물과의 충돌 체크
+            // Check collisions with raindrops
             for raindrop in raindrops {
-                // 빗물의 대략적인 경계 계산
                 let dropRect = CGRect(
                     x: raindrop.position.x - raindrop.size / 2,
                     y: raindrop.position.y - raindrop.size / 2,
@@ -366,74 +314,32 @@ struct WaterDropView: View {
                     height: raindrop.size
                 )
                 
-                // 흘러내림 효과와 빗물 충돌 체크
                 if streamRect.intersects(dropRect) {
                     raindropsToRemove.insert(raindrop.id)
                 }
             }
-            
-            // 물줄기끼리의 충돌 체크 - 현재 물방울보다 나중에 생성된 물방울들과만 비교
-            for otherDropIndex in sortedStreamDrops.indices {
-                let otherDrop = sortedStreamDrops[otherDropIndex]
-                
-                // 자기 자신과는 충돌 체크 안함
-                if streamDrop.id == otherDrop.id {
-                    continue
-                }
-                
-                // 나중에 생성된 물방울과만 비교 (먼저 생성된 물방울만 제거하기 위해)
-                if otherDrop.creationTime <= streamDrop.creationTime {
-                    continue
-                }
-                
-                // 이미 페이드 아웃 중인 물방울은 충돌 체크에서 제외
-                if otherDrop.isFading {
-                    continue
-                }
-                
-                // 다른 물줄기 방울의 충돌 범위
-                let otherRect = CGRect(
-                    x: otherDrop.position.x - 12,
-                    y: otherDrop.position.y - 12,
-                    width: 24,
-                    height: 24
-                )
-                
-                // 물줄기끼리 충돌 체크
-                if streamRect.intersects(otherRect) {
-                    // 먼저 생성된 물방울만 페이드 아웃 대상에 추가
-                    streamDropsToFade.insert(streamDrop.id)
-                    break  // 이미 제거 대상이므로 더 이상 확인 필요 없음
-                }
-            }
         }
         
-        // 충돌한 빗물 제거
+        // Remove collided raindrops
         raindrops.removeAll { raindropsToRemove.contains($0.id) }
         
-        // 충돌한 물줄기 방울들에 페이드 아웃 효과 적용 시작
+        // Apply fade out effect to collided stream drops
         for i in 0..<waterStreamDrops.count {
             if streamDropsToFade.contains(waterStreamDrops[i].id) {
                 waterStreamDrops[i].isFading = true
             }
         }
-        
-        // 페이드 아웃 진행 중인 물방울들의 투명도 업데이트
-        updateFadingDrops()
     }
     
-    // 페이드 아웃 중인 물방울들 업데이트
+    // Update fading drops
     private func updateFadingDrops() {
         let currentTime = Date()
         
         for i in 0..<waterStreamDrops.count {
-            // 페이드 아웃 중인 물방울만 처리
             if waterStreamDrops[i].isFading {
-                // 페이드 아웃 시작 시점이 없으면 현재 시간으로 설정
                 let fadeStartTime = waterStreamDrops[i].creationTime
                 let elapsedTime = currentTime.timeIntervalSince(fadeStartTime)
                 
-                // 2초 동안 서서히 투명해지도록 설정
                 let fadeDuration: TimeInterval = 2.0
                 let newOpacity = max(0, 1.0 - (elapsedTime / fadeDuration))
                 
@@ -441,12 +347,39 @@ struct WaterDropView: View {
             }
         }
         
-        // 완전히 투명해진 물방울은 제거
+        // Remove completely transparent drops
         waterStreamDrops.removeAll { $0.opacity <= 0 }
     }
 }
 
-// 빗물 모델
+// Motion Manager
+class MotionManager: ObservableObject {
+    private let motionManager = CMMotionManager()
+    
+    @Published var pitch: Double = 0.0
+    @Published var roll: Double = 0.0
+    
+    init() {
+        motionManager.deviceMotionUpdateInterval = 1.0 / 60.0
+    }
+    
+    func startDeviceMotionUpdates() {
+        guard motionManager.isDeviceMotionAvailable else { return }
+        
+        motionManager.startDeviceMotionUpdates(to: .main) { [weak self] motion, error in
+            guard let motion = motion, error == nil else { return }
+            
+            self?.pitch = motion.attitude.pitch
+            self?.roll = motion.attitude.roll
+        }
+    }
+    
+    func stopDeviceMotionUpdates() {
+        motionManager.stopDeviceMotionUpdates()
+    }
+}
+
+// Model Structs
 struct Raindrop: Identifiable {
     var id: UUID
     var position: CGPoint
@@ -456,17 +389,15 @@ struct Raindrop: Identifiable {
     var imageName: String
 }
 
-// 흘러내리는 물방울 모델
 struct StreamDrop: Identifiable {
     var id: UUID
     var position: CGPoint
     var imageName: String
     var creationTime: Date
-    var opacity: Double = 1.0   // 투명도 (1.0 = 완전 불투명, 0.0 = 완전 투명)
-    var isFading: Bool = false  // 페이드 아웃 중인지 여부
+    var opacity: Double = 1.0
+    var isFading: Bool = false
 }
 
-// 물줄기 정보 모델
 struct StreamInfo {
     var timer: Timer?
 }
@@ -477,22 +408,38 @@ enum WeatherState {
     case stop
 }
 
+// SpriteKit Scene for Rain
 class RainFall: SKScene {
+    var motionManager: MotionManager?
+    private var emitterNode: SKEmitterNode?
+    
     override func sceneDidLoad() {
         size = UIScreen.main.bounds.size
         scaleMode = .resizeFill
         anchorPoint = CGPoint(x: 0.5, y: 0)
-        
-        // 명시적으로 투명 배경 설정
         backgroundColor = .clear
         
         if let rainNode = SKEmitterNode(fileNamed: "Rain.sks") {
             rainNode.position = CGPoint(x: size.width / 2, y: 1000)
-            rainNode.particlePositionRange = CGVector(dx: size.width * 2, dy: 0) // X축 전체로 확산
-            rainNode.particlePosition = CGPoint(x: 0, y: 0) // 중앙 기준으로 확산
+            rainNode.particlePositionRange = CGVector(dx: size.width * 2, dy: 0)
             rainNode.zPosition = 1
+            emitterNode = rainNode
             addChild(rainNode)
         }
+    }
+    
+    override func update(_ currentTime: TimeInterval) {
+        updateRainDirection()
+    }
+    
+    private func updateRainDirection() {
+        guard let motionManager = motionManager, let emitter = emitterNode else { return }
+        
+        let roll = motionManager.roll
+        let maxDeflection: CGFloat = 200
+        let xSpeed = CGFloat(roll) * maxDeflection
+        
+        emitter.xAcceleration = xSpeed
     }
 }
 
@@ -500,19 +447,17 @@ class RainFallLanding: SKScene {
     override func sceneDidLoad() {
         size = UIScreen.main.bounds.size
         scaleMode = .resizeFill
-        anchorPoint = CGPoint(x: 0.5, y: 0) // 하단 기준
-        
-        // 명시적으로 투명 배경 설정
+        anchorPoint = CGPoint(x: 0.5, y: 0)
         backgroundColor = .clear
         
         if let node = SKEmitterNode(fileNamed: "RainFallLanding.sks") {
-            node.particlePositionRange = CGVector(dx: 240, dy: 0) // X축 전체로 확산
+            node.particlePositionRange = CGVector(dx: 240, dy: 0)
             addChild(node)
         }
     }
 }
 
-// 버튼 스타일 지정
+// Button Style
 struct BasicButtonStyle: ButtonStyle {
     func makeBody(configuration: Self.Configuration) -> some View {
         configuration.label
@@ -522,18 +467,7 @@ struct BasicButtonStyle: ButtonStyle {
             .background(Color.gray.opacity(0.7))
             .foregroundColor(.white)
             .cornerRadius(20)
-            .overlay(
-                RoundedRectangle(cornerRadius: 25)
-                    .stroke(configuration.isPressed ? Color.white : Color.clear, lineWidth: 3)
-            )
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .animation(.easeOut(duration: 0.2), value: configuration.isPressed)
-    }
-}
-
-struct WaterDropViewPreviews: PreviewProvider {
-    static var previews: some View {
-        WaterDropView()
-            .previewLayout(.sizeThatFits)
     }
 }
