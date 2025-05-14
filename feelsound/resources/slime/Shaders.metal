@@ -41,9 +41,10 @@ fragment float4 slime_fragment(VertexOut in [[stage_in]],
         float2 pos = touchInputs[i].xy;
         float force = touchInputs[i].z;
 
+        // slime_fragment 예시 (이미 있으나 더 강화 가능)
         float dist = distance(screenPos, pos);
         float ripple = sin(dist * 40.0 - u_time * 6.0) * 0.02 / (dist * 40.0 + 1.0);
-        ripple *= force;
+        offset += ripple * float2(1.0, 0.6); // ✨ 수직/수평 비율 조절로 더 젤리 느낌
 
         offset.x += ripple;
         offset.y += ripple * 0.6;
