@@ -28,10 +28,17 @@ class SlimeMTKView: MTKView {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        renderer?.touchInputs.removeAll()
+        for touch in touches {
+            let id = ObjectIdentifier(touch)
+            renderer?.touchStartTimes.removeValue(forKey: id)
+            renderer?.touchInputs.removeAll { $0.id == id }
+        }
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        for touch in touches {
+            renderer?.touchStartTimes.removeValue(forKey: ObjectIdentifier(touch))
+        }
         renderer?.touchInputs.removeAll()
     }
 }

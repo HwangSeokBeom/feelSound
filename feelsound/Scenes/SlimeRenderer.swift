@@ -18,6 +18,12 @@ struct SlimeVertex {
     var velocity: SIMD2<Float> = .zero
 }
 
+struct SlimeTouch {
+    let id: ObjectIdentifier
+    let position: SIMD2<Float>
+    let force: Float
+}
+
 class SlimeRenderer: NSObject, MTKViewDelegate {
     var device: MTLDevice!
     var commandQueue: MTLCommandQueue!
@@ -30,8 +36,8 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
 
     var vertices: [SlimeVertex] = []
     var indices: [UInt16] = []
-
-    var touchInputs: [(position: SIMD2<Float>, force: Float)] = []
+    var touchInputs: [SlimeTouch] = []
+    var touchStartTimes: [ObjectIdentifier: TimeInterval] = [:]
     var time: Float = 0
     var viewSize: CGSize = .zero
 
@@ -115,8 +121,13 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
     }
 
     func handleTouches(_ touches: Set<UITouch>, in view: UIView) {
-        touchInputs.removeAll()
+        let now = CACurrentMediaTime()
+
+        // 업데이트 대상만 Dictionary로 따로 만든다
+        var updated: [ObjectIdentifier: SlimeTouch] = [:]
+
         for touch in touches {
+            let id = ObjectIdentifier(touch)
             let loc = touch.location(in: view)
             let x = (Float(loc.x) / Float(view.bounds.width)) * 2.0 - 1.0
             let y = (1.0 - Float(loc.y) / Float(view.bounds.height)) * 2.0 - 1.0
@@ -127,58 +138,77 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
             let force = (maxForce > 0) ? Float(rawForce / maxForce) : 1.0
 
             if pos.x.isFinite && pos.y.isFinite {
-                touchInputs.append((position: pos, force: force))
+                updated[id] = SlimeTouch(id: id, position: pos, force: force)
+                if touchStartTimes[id] == nil {
+                    touchStartTimes[id] = now
+                }
             }
         }
+
+        // 기존 touchInputs에서 업데이트 대상은 덮어쓰고, 나머지는 유지
+        var merged: [SlimeTouch] = []
+        var existing = Dictionary(uniqueKeysWithValues: touchInputs.map { ($0.id, $0) })
+
+        for (id, newTouch) in updated {
+            existing[id] = newTouch
+        }
+
+        merged = Array(existing.values)
+        touchInputs = merged
     }
     
     @objc func handlePan(_ sender: UIPanGestureRecognizer) {
         guard let view = sender.view else { return }
-        let location = sender.location(in: view)
 
-        // 터치처럼 처리되도록 좌표를 Metal 좌표계로 변환
+        let location = sender.location(in: view)
         let x = (Float(location.x) / Float(view.bounds.width)) * 2.0 - 1.0
         let y = (1.0 - Float(location.y) / Float(view.bounds.height)) * 2.0 - 1.0
         let position = SIMD2<Float>(x, y)
 
-        let force: Float
-        if #available(iOS 9.0, *), sender.numberOfTouches > 0 {
-            // 첫 번째 터치 force 사용 (없으면 1.0로 fallback)
-            if let touch = (sender.view as? MTKView)?.gestureRecognizers?
-                .compactMap({ $0 as? UIGestureRecognizer })
-                .compactMap({ $0 as? UITouch })
-                .first {
-                force = Float(touch.force / touch.maximumPossibleForce)
-            } else {
-                force = 1.0
-            }
-        } else {
-            force = 1.0
+        let id = ObjectIdentifier(sender)
+        let now = CACurrentMediaTime()
+        if touchStartTimes[id] == nil {
+            touchStartTimes[id] = now
         }
 
-        // 터치 데이터 등록
-        touchInputs = [(position: position, force: force)]
+        touchInputs = [SlimeTouch(id: id, position: position, force: 1.0)]
     }
 
     func updateVertices() {
+        let now = CACurrentMediaTime()
+
         for i in 0..<vertices.count {
             var v = vertices[i]
             let delta = v.original - v.position
-            let restoringForce = delta * 0.1
-            let damping: Float = 0.85
-
+            let restoringForce = delta * 0.12
+            let damping: Float = 0.88
             v.velocity += restoringForce
 
-            for (touchPos, force) in touchInputs {
-                let dist = simd_distance(v.position, touchPos)
-                if dist < 0.4 {
-                    let pull = (0.4 - dist) * (0.02 + 0.05 * force)
-                    let dir = simd_normalize(v.position - touchPos)
+            for touch in touchInputs {
+                let dist = simd_distance(v.position, touch.position)
+                let duration = Float(now - (touchStartTimes[touch.id] ?? now))
+
+                // 시간 기반 눌림 범위 확대
+                let durationBoost = min(duration, 2.0) / 2.0  // 0.0 ~ 1.0
+                let radius: Float = 0.25 + 0.15 * durationBoost  // 눌림 반경 0.25 ~ 0.4
+
+                // 파동 반응 (조금 더 범위 넓게)
+                if dist < radius + 0.1 {
+                    let pull = (radius + 0.1 - dist) * (0.04 + 0.08 * touch.force)
+                    let dir = simd_normalize(v.position - touch.position)
                     v.velocity += dir * pull
                 }
 
-                if force > 0.8 && dist < 0.3 {
-                    v.position += simd_normalize(touchPos - v.position) * 0.01
+                // 눌림 깊이 강화 (시간 + 거리 반영)
+                if dist < radius {
+                    let pressureEffect = (radius - dist) * touch.force * 0.2
+                    let pushDir = simd_normalize(touch.position - v.position)
+                    v.position += pushDir * pressureEffect * durationBoost
+
+                    let delta = simd_length(v.original - v.position)
+                    if delta > 0.01 {
+                        print("vertex[\(i)] 눌림 정도: \(delta), duration: \(duration), 반경: \(radius)")
+                    }
                 }
             }
 
