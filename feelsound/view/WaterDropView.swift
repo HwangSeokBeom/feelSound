@@ -209,7 +209,7 @@ struct WaterDropView: View {
     // Start random water streams
     private func startRandomStreams(in size: CGSize) {
         // Create a new stream every 0.5-1 seconds
-        Timer.scheduledTimer(withTimeInterval: Double.random(in: 0.5...1), repeats: true) { timer in
+        Timer.scheduledTimer(withTimeInterval: Double.random(in: 1...1.5), repeats: true) { timer in
             // Only create new streams if not in STOP mode
             guard self.weatherState != .stop else {
                 timer.invalidate()
@@ -469,5 +469,12 @@ struct BasicButtonStyle: ButtonStyle {
             .cornerRadius(20)
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .animation(.easeOut(duration: 0.2), value: configuration.isPressed)
+    }
+}
+
+struct WaterDropViewPreviews: PreviewProvider {
+    static var previews: some View {
+        WaterDropView()
+            .previewLayout(.sizeThatFits)
     }
 }
