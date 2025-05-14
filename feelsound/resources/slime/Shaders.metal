@@ -41,14 +41,24 @@ fragment float4 slime_fragment(VertexOut in [[stage_in]],
         float2 pos = touchInputs[i].xy;
         float force = touchInputs[i].z;
 
-        // slime_fragment 예시 (이미 있으나 더 강화 가능)
         float dist = distance(screenPos, pos);
         float ripple = sin(dist * 40.0 - u_time * 6.0) * 0.02 / (dist * 40.0 + 1.0);
-        offset += ripple * float2(1.0, 0.6); // ✨ 수직/수평 비율 조절로 더 젤리 느낌
-
+        offset += ripple * float2(1.0, 0.6);
         offset.x += ripple;
         offset.y += ripple * 0.6;
     }
 
-    return texture.sample(s, uv + offset);
+    // 가짜 노멀 기반 입체감 조명
+    float3 normal = normalize(float3(screenPos.x, screenPos.y,
+                           sqrt(max(0.0, 1.0 - clamp(dot(screenPos, screenPos), 0.0, 1.0)))));
+    float3 lightDir = normalize(float3(0.3, 0.4, 1.0));
+    float fakeLighting = clamp(dot(normal, lightDir), 0.0, 1.0); // 중심 밝고, 외곽 어둡게
+
+    // 텍스처 + 오프셋 샘플링
+    float3 baseColor = texture.sample(s, uv + offset).rgb;
+
+    // 입체감 반영: 라이트 계수 혼합
+    float3 finalColor = baseColor * (0.9 + fakeLighting * 0.2); // 기본보다 최대 20% 밝게
+
+    return float4(finalColor, 1.0);
 }

@@ -10,6 +10,7 @@
 
 import Foundation
 import MetalKit
+import AVFoundation
 
 struct SlimeVertex {
     var position: SIMD2<Float>
@@ -22,9 +23,13 @@ struct SlimeTouch {
     let id: ObjectIdentifier
     let position: SIMD2<Float>
     let force: Float
+    var previousPosition: SIMD2<Float>?
 }
 
 class SlimeRenderer: NSObject, MTKViewDelegate {
+
+    private let soundPlayer = SlimeSoundPlayer()
+
     var device: MTLDevice!
     var commandQueue: MTLCommandQueue!
     var pipelineState: MTLRenderPipelineState!
@@ -122,9 +127,9 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
 
     func handleTouches(_ touches: Set<UITouch>, in view: UIView) {
         let now = CACurrentMediaTime()
-
-        // 업데이트 대상만 Dictionary로 따로 만든다
         var updated: [ObjectIdentifier: SlimeTouch] = [:]
+
+        var existing = Dictionary(uniqueKeysWithValues: touchInputs.map { ($0.id, $0) })
 
         for touch in touches {
             let id = ObjectIdentifier(touch)
@@ -138,40 +143,15 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
             let force = (maxForce > 0) ? Float(rawForce / maxForce) : 1.0
 
             if pos.x.isFinite && pos.y.isFinite {
-                updated[id] = SlimeTouch(id: id, position: pos, force: force)
+                let previous = existing[id]?.position
+                updated[id] = SlimeTouch(id: id, position: pos, force: force, previousPosition: previous)
                 if touchStartTimes[id] == nil {
                     touchStartTimes[id] = now
                 }
             }
         }
 
-        // 기존 touchInputs에서 업데이트 대상은 덮어쓰고, 나머지는 유지
-        var merged: [SlimeTouch] = []
-        var existing = Dictionary(uniqueKeysWithValues: touchInputs.map { ($0.id, $0) })
-
-        for (id, newTouch) in updated {
-            existing[id] = newTouch
-        }
-
-        merged = Array(existing.values)
-        touchInputs = merged
-    }
-    
-    @objc func handlePan(_ sender: UIPanGestureRecognizer) {
-        guard let view = sender.view else { return }
-
-        let location = sender.location(in: view)
-        let x = (Float(location.x) / Float(view.bounds.width)) * 2.0 - 1.0
-        let y = (1.0 - Float(location.y) / Float(view.bounds.height)) * 2.0 - 1.0
-        let position = SIMD2<Float>(x, y)
-
-        let id = ObjectIdentifier(sender)
-        let now = CACurrentMediaTime()
-        if touchStartTimes[id] == nil {
-            touchStartTimes[id] = now
-        }
-
-        touchInputs = [SlimeTouch(id: id, position: position, force: 1.0)]
+        touchInputs = Array(updated.values)
     }
 
     func updateVertices() {
@@ -188,26 +168,38 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
                 let dist = simd_distance(v.position, touch.position)
                 let duration = Float(now - (touchStartTimes[touch.id] ?? now))
 
-                // 시간 기반 눌림 범위 확대
-                let durationBoost = min(duration, 2.0) / 2.0  // 0.0 ~ 1.0
-                let radius: Float = 0.25 + 0.15 * durationBoost  // 눌림 반경 0.25 ~ 0.4
+                let durationBoost = min(duration, 2.0) / 2.0
+                let radius: Float = 0.25 + 0.15 * durationBoost
 
-                // 파동 반응 (조금 더 범위 넓게)
                 if dist < radius + 0.1 {
                     let pull = (radius + 0.1 - dist) * (0.04 + 0.08 * touch.force)
                     let dir = simd_normalize(v.position - touch.position)
                     v.velocity += dir * pull
                 }
 
-                // 눌림 깊이 강화 (시간 + 거리 반영)
                 if dist < radius {
                     let pressureEffect = (radius - dist) * touch.force * 0.2
                     let pushDir = simd_normalize(touch.position - v.position)
                     v.position += pushDir * pressureEffect * durationBoost
 
                     let delta = simd_length(v.original - v.position)
-                    if delta > 0.01 {
-                        print("vertex[\(i)] 눌림 정도: \(delta), duration: \(duration), 반경: \(radius)")
+                    let velocityMagnitude = simd_length(v.velocity)
+
+                    if delta > 0.05 && i % 50 == 0 {
+                        if duration < 0.08 {
+                            soundPlayer.play(type: .tap)
+                        } else if let prev = touch.previousPosition {
+                            let movement = simd_length(touch.position - prev)
+                            let velocity = min(movement * 15.0, 1.0)
+
+                            if velocity > 0.15 {
+                                soundPlayer.play(type: .drag, velocity: velocity)
+                            } else {
+                                soundPlayer.play(type: .press, duration: duration)
+                            }
+                        } else {
+                            soundPlayer.play(type: .press, duration: duration)
+                        }
                     }
                 }
             }
