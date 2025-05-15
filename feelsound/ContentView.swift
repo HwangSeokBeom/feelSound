@@ -56,7 +56,7 @@ struct ContentView: View {
                             .toolbar(.hidden)
                         
                     case .sampleView6:
-                        SlimeView()
+                        SlimeSelectionView()
                             .toolbar(.hidden)
                     }
                 }

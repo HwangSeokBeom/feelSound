@@ -5,6 +5,11 @@
 //  Created by Hwangseokbeom on 5/14/25.
 //
 
+//
+//  SlimeMTKView.swift
+//  feelsound
+//
+
 import MetalKit
 
 class SlimeMTKView: MTKView {
@@ -12,7 +17,7 @@ class SlimeMTKView: MTKView {
 
     override init(frame frameRect: CGRect, device: MTLDevice?) {
         super.init(frame: frameRect, device: device)
-        self.isMultipleTouchEnabled = true // ✅ 멀티터치 허용!
+        self.isMultipleTouchEnabled = true
     }
 
     required init(coder: NSCoder) {

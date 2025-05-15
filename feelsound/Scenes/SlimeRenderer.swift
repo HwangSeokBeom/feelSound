@@ -1,252 +1,237 @@
+////
+////  Untitled.swift
+////  feelsound
+////
+////  Created by Hwangseokbeom on 5/15/25.
+////
 //
-//  Untitled.swift
-//  feelsound
+//import Foundation
+//import MetalKit
+//import AVFoundation
 //
-//  Created by Hwangseokbeom on 5/13/25.
+//// MARK: - 슬라임 정점 및 터치 정의
+//struct SlimeVertex {
+//    var position: SIMD2<Float>
+//    var uv: SIMD2<Float>
+//    var original: SIMD2<Float>
+//    var velocity: SIMD2<Float> = .zero
+//    var force: SIMD2<Float> = .zero
+//    var neighbors: [Int] = []
+//}
 //
-
-// SlimeRenderer.swift
-// feelsound
-
-import Foundation
-import MetalKit
-import AVFoundation
-
-struct SlimeVertex {
-    var position: SIMD2<Float>
-    var uv: SIMD2<Float>
-    var original: SIMD2<Float>
-    var velocity: SIMD2<Float> = .zero
-}
-
-struct SlimeTouch {
-    let id: ObjectIdentifier
-    let position: SIMD2<Float>
-    let force: Float
-    var previousPosition: SIMD2<Float>?
-}
-
-class SlimeRenderer: NSObject, MTKViewDelegate {
-
-    private let soundPlayer = SlimeSoundPlayer()
-
-    var device: MTLDevice!
-    var commandQueue: MTLCommandQueue!
-    var pipelineState: MTLRenderPipelineState!
-    var vertexBuffer: MTLBuffer!
-    var indexBuffer: MTLBuffer!
-
-    var texture: MTLTexture!
-    var samplerState: MTLSamplerState!
-
-    var vertices: [SlimeVertex] = []
-    var indices: [UInt16] = []
-    var touchInputs: [SlimeTouch] = []
-    var touchStartTimes: [ObjectIdentifier: TimeInterval] = [:]
-    var time: Float = 0
-    var viewSize: CGSize = .zero
-
-    private let cols = 40
-    private let rows = 40
-
-    override init() {
-        super.init()
-        self.device = MTLCreateSystemDefaultDevice()
-        self.commandQueue = device.makeCommandQueue()
-
-        let library = device.makeDefaultLibrary()!
-        let vertexFunc = library.makeFunction(name: "slime_vertex")
-        let fragmentFunc = library.makeFunction(name: "slime_fragment")
-
-        let vertexDescriptor = MTLVertexDescriptor()
-        vertexDescriptor.attributes[0].format = .float2
-        vertexDescriptor.attributes[0].offset = 0
-        vertexDescriptor.attributes[0].bufferIndex = 0
-
-        vertexDescriptor.attributes[1].format = .float2
-        vertexDescriptor.attributes[1].offset = MemoryLayout<SIMD2<Float>>.stride
-        vertexDescriptor.attributes[1].bufferIndex = 0
-
-        vertexDescriptor.layouts[0].stride = MemoryLayout<SlimeVertex>.stride
-        vertexDescriptor.layouts[0].stepFunction = .perVertex
-
-        let descriptor = MTLRenderPipelineDescriptor()
-        descriptor.vertexFunction = vertexFunc
-        descriptor.fragmentFunction = fragmentFunc
-        descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-        descriptor.vertexDescriptor = vertexDescriptor
-
-        self.pipelineState = try! device.makeRenderPipelineState(descriptor: descriptor)
-
-        loadTexture(named: "glitter_slime")
-        setupSampler()
-    }
-
-    func loadTexture(named name: String) {
-        let loader = MTKTextureLoader(device: device)
-        let url = Bundle.main.url(forResource: name, withExtension: "png")!
-        texture = try! loader.newTexture(URL: url, options: nil)
-    }
-
-    func setupSampler() {
-        let samplerDescriptor = MTLSamplerDescriptor()
-        samplerDescriptor.minFilter = .linear
-        samplerDescriptor.magFilter = .linear
-        samplerState = device.makeSamplerState(descriptor: samplerDescriptor)
-    }
-
-    func buildGrid() {
-        vertices.removeAll()
-        indices.removeAll()
-
-        for row in 0..<rows {
-            for col in 0..<cols {
-                let x = Float(col) / Float(cols - 1)
-                let y = Float(row) / Float(rows - 1)
-                let pos = SIMD2<Float>(x * 2 - 1, y * 2 - 1)
-                let uv = SIMD2<Float>(x, y)
-                vertices.append(SlimeVertex(position: pos, uv: uv, original: pos))
-            }
-        }
-
-        for row in 0..<(rows - 1) {
-            for col in 0..<(cols - 1) {
-                let topLeft = UInt16(row * cols + col)
-                let topRight = UInt16(row * cols + col + 1)
-                let bottomLeft = UInt16((row + 1) * cols + col)
-                let bottomRight = UInt16((row + 1) * cols + col + 1)
-
-                indices.append(contentsOf: [topLeft, bottomLeft, topRight])
-                indices.append(contentsOf: [topRight, bottomLeft, bottomRight])
-            }
-        }
-
-        vertexBuffer = device.makeBuffer(bytes: vertices, length: MemoryLayout<SlimeVertex>.stride * vertices.count, options: [])
-        indexBuffer = device.makeBuffer(bytes: indices, length: MemoryLayout<UInt16>.stride * indices.count, options: [])
-    }
-
-    func handleTouches(_ touches: Set<UITouch>, in view: UIView) {
-        let now = CACurrentMediaTime()
-        var updated: [ObjectIdentifier: SlimeTouch] = [:]
-
-        var existing = Dictionary(uniqueKeysWithValues: touchInputs.map { ($0.id, $0) })
-
-        for touch in touches {
-            let id = ObjectIdentifier(touch)
-            let loc = touch.location(in: view)
-            let x = (Float(loc.x) / Float(view.bounds.width)) * 2.0 - 1.0
-            let y = (1.0 - Float(loc.y) / Float(view.bounds.height)) * 2.0 - 1.0
-            let pos = SIMD2<Float>(x, y)
-
-            let rawForce = touch.force
-            let maxForce = touch.maximumPossibleForce
-            let force = (maxForce > 0) ? Float(rawForce / maxForce) : 1.0
-
-            if pos.x.isFinite && pos.y.isFinite {
-                let previous = existing[id]?.position
-                updated[id] = SlimeTouch(id: id, position: pos, force: force, previousPosition: previous)
-                if touchStartTimes[id] == nil {
-                    touchStartTimes[id] = now
-                }
-            }
-        }
-
-        touchInputs = Array(updated.values)
-    }
-
-    func updateVertices() {
-        let now = CACurrentMediaTime()
-
-        for i in 0..<vertices.count {
-            var v = vertices[i]
-            let delta = v.original - v.position
-            let restoringForce = delta * 0.12
-            let damping: Float = 0.88
-            v.velocity += restoringForce
-
-            for touch in touchInputs {
-                let dist = simd_distance(v.position, touch.position)
-                let duration = Float(now - (touchStartTimes[touch.id] ?? now))
-
-                let durationBoost = min(duration, 2.0) / 2.0
-                let radius: Float = 0.25 + 0.15 * durationBoost
-
-                if dist < radius + 0.1 {
-                    let pull = (radius + 0.1 - dist) * (0.04 + 0.08 * touch.force)
-                    let dir = simd_normalize(v.position - touch.position)
-                    v.velocity += dir * pull
-                }
-
-                if dist < radius {
-                    let pressureEffect = (radius - dist) * touch.force * 0.2
-                    let pushDir = simd_normalize(touch.position - v.position)
-                    v.position += pushDir * pressureEffect * durationBoost
-
-                    let delta = simd_length(v.original - v.position)
-                    let velocityMagnitude = simd_length(v.velocity)
-
-                    if delta > 0.05 && i % 50 == 0 {
-                        if duration < 0.08 {
-                            soundPlayer.play(type: .tap)
-                        } else if let prev = touch.previousPosition {
-                            let movement = simd_length(touch.position - prev)
-                            let velocity = min(movement * 15.0, 1.0)
-
-                            if velocity > 0.15 {
-                                soundPlayer.play(type: .drag, velocity: velocity)
-                            } else {
-                                soundPlayer.play(type: .press, duration: duration)
-                            }
-                        } else {
-                            soundPlayer.play(type: .press, duration: duration)
-                        }
-                    }
-                }
-            }
-
-            v.velocity *= damping
-            v.position += v.velocity
-            vertices[i] = v
-        }
-
-        memcpy(vertexBuffer.contents(), vertices, MemoryLayout<SlimeVertex>.stride * vertices.count)
-    }
-
-    func draw(in view: MTKView) {
-        guard let drawable = view.currentDrawable,
-              let descriptor = view.currentRenderPassDescriptor else { return }
-
-        updateVertices()
-
-        time += 1 / Float(view.preferredFramesPerSecond)
-
-        var touchData: [SIMD3<Float>] = Array(repeating: SIMD3<Float>(-10, -10, 0), count: 5)
-        for i in 0..<min(5, touchInputs.count) {
-            let input = touchInputs[i]
-            touchData[i] = SIMD3<Float>(input.position.x, input.position.y, input.force)
-        }
-        var maxTouches = 5
-        var currentTime = time
-
-        let commandBuffer = commandQueue.makeCommandBuffer()!
-        let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)!
-        encoder.setRenderPipelineState(pipelineState)
-        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
-
-        encoder.setFragmentTexture(texture, index: 0)
-        encoder.setFragmentSamplerState(samplerState, index: 0)
-        encoder.setFragmentBytes(&touchData, length: MemoryLayout<SIMD3<Float>>.stride * 5, index: 2)
-        encoder.setFragmentBytes(&maxTouches, length: MemoryLayout<Int>.stride, index: 3)
-        encoder.setFragmentBytes(&currentTime, length: MemoryLayout<Float>.stride, index: 1)
-
-        encoder.drawIndexedPrimitives(type: .triangle, indexCount: indices.count, indexType: .uint16, indexBuffer: indexBuffer, indexBufferOffset: 0)
-        encoder.endEncoding()
-        commandBuffer.present(drawable)
-        commandBuffer.commit()
-    }
-
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
-        viewSize = size
-        buildGrid()
-    }
-}
+//struct SlimeTouch {
+//    let id: ObjectIdentifier
+//    let position: SIMD2<Float>
+//    let force: Float
+//    var previousPosition: SIMD2<Float>?
+//}
+//
+//// MARK: - 슬라임 사운드 플레이어
+//class SlimeSoundPlayer {
+//    private let engine = AVAudioEngine()
+//    private var sourceNode: AVAudioSourceNode!
+//    private var sampleRate: Float = 44100
+//    private var time: Float = 0
+//
+//    init() {
+//        setupEngine()
+//    }
+//
+//    private func setupEngine() {
+//        let mainMixer = engine.mainMixerNode
+//        sampleRate = Float(engine.outputNode.outputFormat(forBus: 0).sampleRate)
+//
+//        sourceNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
+//            let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+//            for frame in 0..<Int(frameCount) {
+//                let sampleVal = sin(2.0 * .pi * 440 * self.time / self.sampleRate)
+//                self.time += 1
+//                for buffer in ablPointer {
+//                    let buf: UnsafeMutableBufferPointer<Float> = UnsafeMutableBufferPointer(buffer)
+//                    buf[frame] = sampleVal * 0.2
+//                }
+//            }
+//            return noErr
+//        }
+//
+//        engine.attach(sourceNode)
+//        engine.connect(sourceNode, to: mainMixer, format: nil)
+//        try? engine.start()
+//    }
+//
+//    func play() {
+//        time = 0
+//    }
+//}
+//
+//// MARK: - 슬라임 렌더러
+//class SlimeRenderer: NSObject, MTKViewDelegate {
+//    // 기본 Metal
+//    var device: MTLDevice!
+//    var commandQueue: MTLCommandQueue!
+//    var pipelineState: MTLRenderPipelineState!
+//    var vertexBuffer: MTLBuffer!
+//    var indexBuffer: MTLBuffer!
+//    var texture: MTLTexture!
+//    var samplerState: MTLSamplerState!
+//    
+//    private var uTime: Float = 0
+//    private var uTimeBuffer: MTLBuffer!
+//    private var touchInputBuffer: MTLBuffer!
+//    private var maxTouchesBuffer: MTLBuffer!
+//
+//    // 데이터
+//    var vertices: [SlimeVertex] = []
+//    var indices: [UInt16] = []
+//    var touchInputs: [SlimeTouch] = []
+//    var touchStartTimes: [ObjectIdentifier: TimeInterval] = [:]
+//    var viewSize: CGSize = .zero
+//
+//    // 사운드
+//    let soundPlayer = SlimeSoundPlayer()
+//
+//    // 초기화
+//    override init() {
+//        super.init()
+//        self.device = MTLCreateSystemDefaultDevice()
+//        self.commandQueue = device.makeCommandQueue()
+//
+//        //  초기 버퍼 생성 (기본 사이즈 확보)
+//        uTimeBuffer = device.makeBuffer(length: MemoryLayout<Float>.size, options: [])
+//        touchInputBuffer = device.makeBuffer(length: MemoryLayout<SIMD3<Float>>.stride * 10, options: [])
+//        maxTouchesBuffer = device.makeBuffer(length: MemoryLayout<Int32>.size, options: [])
+//    }
+//
+//    // Grid 설정 (외부에서 호출)
+//    func buildGrid() {
+//        // 기본 정점, 인덱스 세팅 (예시)
+//        vertices.removeAll()
+//        indices.removeAll()
+//
+//        let cols = 40
+//        let rows = 40
+//
+//        for y in 0..<rows {
+//            for x in 0..<cols {
+//                let pos = SIMD2<Float>(
+//                    Float(x) / Float(cols - 1) * Float(viewSize.width),
+//                    Float(y) / Float(rows - 1) * Float(viewSize.height)
+//                )
+//                let uv = SIMD2<Float>(Float(x) / Float(cols - 1), Float(y) / Float(rows - 1))
+//                vertices.append(SlimeVertex(position: pos, uv: uv, original: pos))
+//            }
+//        }
+//
+//        for y in 0..<rows-1 {
+//            for x in 0..<cols-1 {
+//                let i = UInt16(y * cols + x)
+//                indices.append(contentsOf: [i, i+1, i+UInt16(cols), i+1, i+UInt16(cols)+1, i+UInt16(cols)])
+//            }
+//        }
+//
+//        // 버퍼 생성
+//        vertexBuffer = device.makeBuffer(bytes: vertices, length: MemoryLayout<SlimeVertex>.stride * vertices.count, options: [])
+//        indexBuffer = device.makeBuffer(bytes: indices, length: MemoryLayout<UInt16>.stride * indices.count, options: [])
+//
+//        // 텍스처 로드
+//        let textureLoader = MTKTextureLoader(device: device)
+//            if let url = Bundle.main.url(forResource: "glitter_slime", withExtension: "png") {
+//                texture = try? textureLoader.newTexture(URL: url, options: nil)
+//            } else {
+//                print("❗ glitter_slime.png 이미지가 번들에 없습니다.")
+//            }
+//
+//            guard let library = device.makeDefaultLibrary() else {
+//                fatalError("❌ Metal 라이브러리 로딩 실패")
+//            }
+//            guard let vertexFunc = library.makeFunction(name: "slime_vertex") else {
+//                fatalError("❌ slime_vertex 함수 없음")
+//            }
+//            guard let fragmentFunc = library.makeFunction(name: "slime_fragment") else {
+//                fatalError("❌ slime_fragment 함수 없음")
+//            }
+//
+//            let descriptor = MTLRenderPipelineDescriptor()
+//            descriptor.vertexFunction = vertexFunc
+//            descriptor.fragmentFunction = fragmentFunc
+//            descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+//
+//            do {
+//                pipelineState = try device.makeRenderPipelineState(descriptor: descriptor)
+//            } catch {
+//                fatalError("❌ RenderPipelineState 생성 실패: \(error)")
+//            }
+//        }
+//
+//    // MARK: - Touch 처리
+//    func handleTouches(_ touches: Set<UITouch>, in view: UIView) {
+//        for touch in touches {
+//            let id = ObjectIdentifier(touch)
+//            let location = touch.location(in: view)
+//            let pos = SIMD2<Float>(Float(location.x), Float(location.y))
+//            let force = Float(touch.force / touch.maximumPossibleForce)
+//            let previous = touch.previousLocation(in: view)
+//            let prevPos = SIMD2<Float>(Float(previous.x), Float(previous.y))
+//            let slimeTouch = SlimeTouch(id: id, position: pos, force: force, previousPosition: prevPos)
+//
+//            if let index = touchInputs.firstIndex(where: { $0.id == id }) {
+//                touchInputs[index] = slimeTouch
+//            } else {
+//                touchInputs.append(slimeTouch)
+//                soundPlayer.play()
+//            }
+//        }
+//    }
+//
+//    // MARK: - MTKViewDelegate
+//    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+//        viewSize = size
+//    }
+//
+//    func draw(in view: MTKView) {
+//        guard let drawable = view.currentDrawable,
+//              let descriptor = view.currentRenderPassDescriptor else { return }
+//
+//        // ✅ 시간 업데이트
+//        uTime += 1.0 / 60.0
+//        memcpy(uTimeBuffer.contents(), &uTime, MemoryLayout<Float>.size)
+//
+//        // ✅ 터치 데이터를 float3 배열로 변환
+//        var touches: [SIMD3<Float>] = touchInputs.map {
+//            SIMD3<Float>($0.position.x, $0.position.y, $0.force)
+//        }
+//
+//        // 최대 10개까지만
+//        if touches.count > 10 {
+//            touches = Array(touches.prefix(10))
+//        }
+//
+//        // ✅ 터치 버퍼 복사
+//        memcpy(touchInputBuffer.contents(), touches, MemoryLayout<SIMD3<Float>>.stride * touches.count)
+//
+//        // ✅ 터치 개수 복사
+//        var maxTouches: Int32 = Int32(touches.count)
+//        memcpy(maxTouchesBuffer.contents(), &maxTouches, MemoryLayout<Int32>.size)
+//
+//        // 커맨드 구성
+//        let commandBuffer = commandQueue.makeCommandBuffer()!
+//        let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)!
+//
+//        encoder.setRenderPipelineState(pipelineState)
+//        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
+//
+//        encoder.setFragmentTexture(texture, index: 0)
+//        encoder.setFragmentSamplerState(samplerState, index: 0)
+//
+//        // ✅ 새 버퍼 바인딩
+//        encoder.setFragmentBuffer(uTimeBuffer, offset: 0, index: 1)
+//        encoder.setFragmentBuffer(touchInputBuffer, offset: 0, index: 2)
+//        encoder.setFragmentBuffer(maxTouchesBuffer, offset: 0, index: 3)
+//
+//        encoder.drawIndexedPrimitives(type: .triangle, indexCount: indices.count, indexType: .uint16, indexBuffer: indexBuffer, indexBufferOffset: 0)
+//
+//        encoder.endEncoding()
+//        commandBuffer.present(drawable)
+//        commandBuffer.commit()
+//    }
+//}
