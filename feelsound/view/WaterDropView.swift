@@ -5,10 +5,25 @@
 //  Created by 안준경 on 5/8/25.
 //
 
+
 import SwiftUI
 import Combine
 import SpriteKit
 import CoreMotion
+
+// 물방울 잔흔을 위한 새로운 구조체
+struct DropletTrail: Identifiable {
+    var id = UUID()
+    var position: CGPoint
+    var size: CGFloat          // 시작 크기
+    var opacity: Double = 1.0
+    var imageName: String
+    var creationTime = Date()
+    
+    // 애니메이션 관련 속성
+    var fadeTime: TimeInterval = 3.0  // 완전히 사라지는데 걸리는 시간
+    var shrinkRate: CGFloat = 0.97    // 매 업데이트마다 크기가 줄어드는 비율
+}
 
 struct WaterDropView: View {
     @EnvironmentObject var router: Router
@@ -20,10 +35,12 @@ struct WaterDropView: View {
     @State private var waterStreamDrops: [StreamDrop] = []
     @State private var activeStreams: [UUID: StreamInfo] = [:]
     @State private var collisionDrops: [CollisionDrop] = []
+    @State private var dropletTrails: [DropletTrail] = []  // 물방울 잔흔 배열 추가
     
     // Constants
     private let maxRaindrops: Int = 200
     private let waterdropImages = ["waterdrop_01", "waterdrop_02", "waterdrop_03"]
+    private let trailDropImages = ["waterdrop_01", "waterdrop_02"]  // 잔흔 물방울 이미지
     private let collisionDropImages = ["waterdrop_08"]//, "waterdrop_06"]
     private let collisionRadius: CGFloat = 15 // Collision detection radius
     
@@ -46,6 +63,15 @@ struct WaterDropView: View {
                 
                 // Rain effects
                 ZStack {
+                    // 물방울 잔흔 - 가장 먼저 그려서 다른 물방울 뒤에 위치하도록 함
+                    ForEach(dropletTrails) { trail in
+                        Image(trail.imageName)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: trail.size, height: trail.size)
+                            .opacity(trail.opacity)
+                            .position(trail.position)
+                    }
                     
                     // Stream drops
                     ForEach(waterStreamDrops) { drop in
@@ -126,6 +152,7 @@ struct WaterDropView: View {
         raindrops.removeAll()
         waterStreamDrops.removeAll()
         collisionDrops.removeAll()
+        dropletTrails.removeAll()  // 잔흔 물방울도 초기화
         
         // Clear timers
         timer?.invalidate()
@@ -148,6 +175,9 @@ struct WaterDropView: View {
             // Update collision drops
             self.updateCollisionDrops()
             
+            // Update droplet trails
+            self.updateDropletTrails()
+            
             self.checkOutOfBoundsDrops(in: size)
         }
     }
@@ -167,6 +197,11 @@ struct WaterDropView: View {
         withAnimation(.easeOut(duration: 2)) {
             raindrops.removeAll()
             collisionDrops.removeAll()
+        }
+        
+        // 잔흔 물방울에도 fade 적용
+        for i in 0..<dropletTrails.count {
+            dropletTrails[i].opacity *= 0.9  // 빠르게 사라지게 함
         }
         
         // Mark all water stream drops for fading
@@ -267,9 +302,10 @@ struct WaterDropView: View {
             fallTime: Double.random(in: 0.01...0.05),  // 낙하 시간
             lastStateChangeTime: Date(),             // 상태 변경 시간
             
-            // 새로운 속성 초기화: 물방울 흔적 관련
-            lastDropletTime: Date(),                 // 마지막 물방울 흔적 생성 시간
-            dropletInterval: Double.random(in: 0.1...0.3) // 물방울 흔적 생성 간격 (0.1~0.3초)
+            // 물방울 흔적 관련 속성 초기화
+            lastDropletTime: Date(),
+            dropletInterval: Double.random(in: 0.05...0.15), // 더 자주 물방울 흔적 생성 (0.05~0.15초)
+            leaveDroplets: true  // 물방울 흔적을 남기도록 설정
         )
         
         collisionDrops.append(newCollisionDrop)
@@ -308,6 +344,19 @@ struct WaterDropView: View {
                 // 속도를 빠르게 증가시키며 계속 낙하
                 collisionDrops[i].velocity += 0.2
                 collisionDrops[i].position.y += collisionDrops[i].velocity
+                
+                // 물방울 잔흔 생성 로직 추가
+                if collisionDrops[i].leaveDroplets {
+                    let dropletTimeElapsed = currentTime.timeIntervalSince(collisionDrops[i].lastDropletTime)
+                    
+                    // 일정 간격마다 물방울 잔흔 생성
+                    if dropletTimeElapsed >= collisionDrops[i].dropletInterval {
+                        // 새 물방울 잔흔 생성
+                        createDropletTrail(at: collisionDrops[i].position)
+                        collisionDrops[i].lastDropletTime = currentTime
+                    }
+                }
+                
                 continue
             }
             
@@ -353,6 +402,59 @@ struct WaterDropView: View {
         
         // 완전히 투명해진 물방울 제거
         collisionDrops.removeAll { $0.opacity <= 0.01 }
+    }
+    
+    // 물방울 잔흔 생성 함수
+    private func createDropletTrail(at position: CGPoint) {
+        // 약간의 랜덤 오프셋 추가하여 자연스러운 느낌 부여
+        let randomOffset = CGPoint(
+            x: CGFloat.random(in: -3...3),
+            y: CGFloat.random(in: -1...1)
+        )
+        
+        let trailPosition = CGPoint(
+            x: position.x + randomOffset.x,
+            y: position.y + randomOffset.y
+        )
+        
+        // 랜덤한 이미지 선택
+        let randomImage = trailDropImages.randomElement() ?? "waterdrop_01"
+        
+        // 랜덤한 크기로 시작 (원래 물방울보다 작게)
+        let size = CGFloat(30)
+        
+        let newTrail = DropletTrail(
+            position: trailPosition,
+            size: size,
+            imageName: randomImage,
+            fadeTime: Double.random(in: 2.0...4.0) // 2~4초 사이에 사라짐
+        )
+        
+        dropletTrails.append(newTrail)
+        
+        // 잔흔 물방울 제한 (너무 많아지지 않도록)
+        if dropletTrails.count > 100 {
+            // 가장 오래된 것부터 제거
+            dropletTrails.removeFirst()
+        }
+    }
+    
+    // 물방울 잔흔 업데이트 함수
+    private func updateDropletTrails() {
+        let currentTime = Date()
+        
+        for i in 0..<dropletTrails.count {
+            // 생성 후 경과 시간 계산
+            let timeElapsed = currentTime.timeIntervalSince(dropletTrails[i].creationTime)
+            let progress = timeElapsed / dropletTrails[i].fadeTime
+            
+            // 점점 작아지고 투명해지게 함
+            dropletTrails[i].size *= dropletTrails[i].shrinkRate
+            dropletTrails[i].opacity = max(0, 1.0 - progress)
+        }
+        
+        // 투명도가 0에 가까운 잔흔들 제거
+        dropletTrails.removeAll { $0.opacity < 0.05 || $0.size < 1.0 }
     }
     
     // Calculate X velocity based on device tilt
@@ -413,7 +515,7 @@ struct CollisionDrop: Identifiable {
     var lastStateChangeTime: Date           // 마지막으로 상태가 변경된 시간
     var finalSlide: Bool = false            // 최종 미끄러짐 상태인지
     
-    // 새로운 속성: 물방울 흔적 관련
+    // 물방울 흔적 관련 속성
     var lastDropletTime: Date               // 마지막으로 물방울 흔적을 남긴 시간
     var dropletInterval: TimeInterval       // 물방울 흔적을 남기는 간격
     var leaveDroplets: Bool = false         // 물방울 흔적을 남길지 여부
