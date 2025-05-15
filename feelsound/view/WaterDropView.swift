@@ -22,6 +22,10 @@ struct WaterDropView: View {
     @State private var collisionDrops: [CollisionDrop] = []
     @State private var dropletTrails: [DropletTrail] = []  // 물방울 잔흔 배열 추가
     
+    @State private var motionManager = CMMotionManager()
+    @State private var deviceTilt = CGVector(dx: 0, dy: 0)
+    @State private var isMotionActive = false
+    
     // Constants
     private let maxRaindrops: Int = 500
     private let waterdropImages = ["waterdrop_01", "waterdrop_02", "waterdrop_03", "waterdrop_04"]
@@ -111,17 +115,43 @@ struct WaterDropView: View {
                         }
                         .buttonStyle(BasicButtonStyle())
                     }
-                    .padding(.bottom, 30)
+                    .padding(.bottom, 80)
                 }
             }
             .onAppear {
                 startRainAnimation(in: geometry.size)
+                startMotionUpdates() // 모션 업데이트 시작
             }
             .onDisappear {
                 stopRainAnimation()
+                stopMotionUpdates()  // 모션 업데이트 중지
             }
         }
         .edgesIgnoringSafeArea(.all)
+    }
+    
+    private func startMotionUpdates() {
+        guard motionManager.isAccelerometerAvailable else { return }
+        
+        motionManager.accelerometerUpdateInterval = 1.0 / 30.0  // 30Hz 업데이트 속도
+        motionManager.startAccelerometerUpdates(to: .main) { data, error in
+            guard let data = data, error == nil else { return }
+            
+            // x축과 y축 가속도 값을 CGVector로 변환
+            // 가속도 값은 -1g에서 1g 사이이므로 적절한 계수를 곱해 효과 조정
+            let tiltFactor: CGFloat = 10.0
+            self.deviceTilt = CGVector(
+                dx: CGFloat(data.acceleration.x) * tiltFactor,
+                dy: CGFloat(data.acceleration.y) * tiltFactor
+            )
+        }
+        
+        isMotionActive = true
+    }
+
+    private func stopMotionUpdates() {
+        motionManager.stopAccelerometerUpdates()
+        isMotionActive = false
     }
     
     private func setWeatherState(_ state: WeatherState) {
@@ -149,6 +179,7 @@ struct WaterDropView: View {
         
         // Create raindrop generation timer
         timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { _ in
+            
             // 물방울 생성
             //self.createRaindrop(in: size)
             for _ in 0..<3 {
@@ -314,6 +345,7 @@ struct WaterDropView: View {
     private func updateCollisionDrops() {
         let currentTime = Date()
         let screenHeight = UIScreen.main.bounds.height
+        let screenWidth = UIScreen.main.bounds.width
         
         // 각 충돌 물방울의 위치와 모양을 업데이트
         for i in 0..<collisionDrops.count {
@@ -337,6 +369,20 @@ struct WaterDropView: View {
                 // 속도를 빠르게 증가시키며 계속 낙하
                 collisionDrops[i].velocity += 0.5
                 collisionDrops[i].position.y += collisionDrops[i].velocity
+                
+                collisionDrops[i].position.x += deviceTilt.dx * 2.0 // x축 기울기 영향 조정
+                
+                // y축 중력 효과에 기울기 영향 추가
+                let gravityEffect: CGFloat = max(0.5, 1.0 - abs(deviceTilt.dy) * 0.3)
+                collisionDrops[i].velocity += 0.5 * gravityEffect
+                collisionDrops[i].position.y += collisionDrops[i].velocity
+                
+                // 화면 경계 확인
+                if collisionDrops[i].position.x < 0 {
+                    collisionDrops[i].position.x = 0
+                } else if collisionDrops[i].position.x > screenWidth {
+                    collisionDrops[i].position.x = screenWidth
+                }
                 
                 // 물방울 잔흔 생성 로직 추가
                 if collisionDrops[i].leaveDroplets {
@@ -490,6 +536,7 @@ struct WaterDropView: View {
     // 물방울 잔흔 업데이트 함수
     private func updateDropletTrails() {
         let currentTime = Date()
+        let screenWidth = UIScreen.main.bounds.width
         
         for i in 0..<dropletTrails.count {
             // 생성 후 경과 시간 계산
@@ -499,6 +546,21 @@ struct WaterDropView: View {
             // 점점 작아지고 투명해지게 함
             dropletTrails[i].size *= dropletTrails[i].shrinkRate
             dropletTrails[i].opacity = max(0, 1.0 - progress)
+            
+            // 기울기에 따른 약간의 이동 추가 (잔흔은 더 적게 움직임)
+            // 최대 대각선 45도 범위로 제한
+            let maxTiltAngle: CGFloat = 0.3 // 잔흔은 더 적은 각도로 제한
+            let normalizedTiltX = min(maxTiltAngle, max(-maxTiltAngle, deviceTilt.dx * 0.3))
+            
+            // 잔흔은 매우 약한 이동만 허용
+            dropletTrails[i].position.x += normalizedTiltX * 0.3
+            
+            // 화면 경계 확인
+            if dropletTrails[i].position.x < 0 {
+                dropletTrails[i].position.x = 0
+            } else if dropletTrails[i].position.x > screenWidth {
+                dropletTrails[i].position.x = screenWidth
+            }
         }
         
         // 투명도가 0에 가까운 잔흔들 제거
