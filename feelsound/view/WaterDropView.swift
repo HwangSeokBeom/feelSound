@@ -10,20 +10,6 @@ import Combine
 import SpriteKit
 import CoreMotion
 
-// 물방울 잔흔을 위한 새로운 구조체
-struct DropletTrail: Identifiable {
-    var id = UUID()
-    var position: CGPoint
-    var size: CGFloat          // 시작 크기
-    var opacity: Double = 1.0
-    var imageName: String
-    var creationTime = Date()
-    
-    // 애니메이션 관련 속성
-    var fadeTime: TimeInterval = 5.0  // 완전히 사라지는데 걸리는 시간
-    var shrinkRate: CGFloat = 0.97    // 매 업데이트마다 크기가 줄어드는 비율
-}
-
 struct WaterDropView: View {
     @EnvironmentObject var router: Router
     
@@ -717,6 +703,20 @@ enum WeatherState {
     case stop
 }
 
+// 물방울 잔흔을 위한 새로운 구조체
+struct DropletTrail: Identifiable {
+    var id = UUID()
+    var position: CGPoint
+    var size: CGFloat          // 시작 크기
+    var opacity: Double = 1.0
+    var imageName: String
+    var creationTime = Date()
+    
+    // 애니메이션 관련 속성
+    var fadeTime: TimeInterval = 5.0  // 완전히 사라지는데 걸리는 시간
+    var shrinkRate: CGFloat = 0.97    // 매 업데이트마다 크기가 줄어드는 비율
+}
+
 // Button Style
 struct BasicButtonStyle: ButtonStyle {
     func makeBody(configuration: Self.Configuration) -> some View {
@@ -727,6 +727,10 @@ struct BasicButtonStyle: ButtonStyle {
             .background(Color.gray.opacity(0.7))
             .foregroundColor(.white)
             .cornerRadius(20)
+            .overlay(
+                RoundedRectangle(cornerRadius: 25)
+                    .stroke(configuration.isPressed ? Color.white : Color.clear, lineWidth: 3)
+            )
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .animation(.easeOut(duration: 0.2), value: configuration.isPressed)
     }
