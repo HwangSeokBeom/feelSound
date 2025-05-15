@@ -5,7 +5,6 @@
 //  Created by 안준경 on 5/8/25.
 //
 
-
 import SwiftUI
 import Combine
 import SpriteKit
@@ -21,7 +20,7 @@ struct DropletTrail: Identifiable {
     var creationTime = Date()
     
     // 애니메이션 관련 속성
-    var fadeTime: TimeInterval = 3.0  // 완전히 사라지는데 걸리는 시간
+    var fadeTime: TimeInterval = 5.0  // 완전히 사라지는데 걸리는 시간
     var shrinkRate: CGFloat = 0.97    // 매 업데이트마다 크기가 줄어드는 비율
 }
 
@@ -38,10 +37,10 @@ struct WaterDropView: View {
     @State private var dropletTrails: [DropletTrail] = []  // 물방울 잔흔 배열 추가
     
     // Constants
-    private let maxRaindrops: Int = 200
-    private let waterdropImages = ["waterdrop_01", "waterdrop_02", "waterdrop_03"]
+    private let maxRaindrops: Int = 500
+    private let waterdropImages = ["waterdrop_01", "waterdrop_02", "waterdrop_03", "waterdrop_04"]
     private let trailDropImages = ["waterdrop_01", "waterdrop_02"]  // 잔흔 물방울 이미지
-    private let collisionDropImages = ["waterdrop_08"]//, "waterdrop_06"]
+    private let collisionDropImages = ["waterdrop_08"]
     private let collisionRadius: CGFloat = 15 // Collision detection radius
     
     var body: some View {
@@ -164,9 +163,14 @@ struct WaterDropView: View {
         
         // Create raindrop generation timer
         timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { _ in
-            // Create raindrops with 10% probability
-            if Double.random(in: 0...1) < 1.0 && self.raindrops.count < self.maxRaindrops {
-                self.createRaindrop(in: size)
+            // 물방울 생성
+            //self.createRaindrop(in: size)
+            for _ in 0..<3 {
+                if self.raindrops.count < self.maxRaindrops {
+                    self.createRaindrop(in: size)
+                } else {
+                    break // 최대 개수에 도달하면 중단
+                }
             }
             
             // Check for collisions
@@ -174,6 +178,9 @@ struct WaterDropView: View {
             
             // Update collision drops
             self.updateCollisionDrops()
+            
+            // 물줄기 끼리의 충돌 검사 (새로 추가)
+            self.checkCollisionDropsInteraction()
             
             // Update droplet trails
             self.updateDropletTrails()
@@ -297,9 +304,9 @@ struct WaterDropView: View {
             lastImageChangeTime: Date(),
             
             // 기존 속성 초기화
-            totalPauses: Int.random(in: 2...4),      // 2~4회 사이 랜덤하게 멈춤
-            pauseTime: Double.random(in: 1.0...3.0), // 멈춤 시간
-            fallTime: Double.random(in: 0.01...0.05),  // 낙하 시간
+            totalPauses: Int.random(in: 1...4),      // 2~4회 사이 랜덤하게 멈춤
+            pauseTime: Double.random(in: 1.0...2.0), // 멈춤 시간
+            fallTime: Double(0.05),  // 낙하 시간
             lastStateChangeTime: Date(),             // 상태 변경 시간
             
             // 물방울 흔적 관련 속성 초기화
@@ -342,7 +349,7 @@ struct WaterDropView: View {
             // 최종 미끄러짐 상태인 경우
             if collisionDrops[i].finalSlide {
                 // 속도를 빠르게 증가시키며 계속 낙하
-                collisionDrops[i].velocity += 0.2
+                collisionDrops[i].velocity += 0.5
                 collisionDrops[i].position.y += collisionDrops[i].velocity
                 
                 // 물방울 잔흔 생성 로직 추가
@@ -356,6 +363,9 @@ struct WaterDropView: View {
                         collisionDrops[i].lastDropletTime = currentTime
                     }
                 }
+                
+                // 기존 물방울과 미끄러지는 물방울 간의 충돌 검사
+                checkStreamCollisions(with: collisionDrops[i])
                 
                 continue
             }
@@ -381,7 +391,7 @@ struct WaterDropView: View {
                     if collisionDrops[i].pauseCount >= collisionDrops[i].totalPauses {
                         // 최종 미끄러짐 상태로 전환
                         collisionDrops[i].finalSlide = true
-                        collisionDrops[i].velocity = CGFloat.random(in: 3.0...5.0) // 빠른 초기 속도
+                        collisionDrops[i].velocity = CGFloat(3.0) // 낙하 속도
                     } else {
                         // 다시 멈춤 상태로 전환
                         collisionDrops[i].isPaused = true
@@ -394,7 +404,7 @@ struct WaterDropView: View {
                     
                     // 일반 낙하 중일 때는 중력 효과를 약하게 적용
                     if !collisionDrops[i].finalSlide {
-                        collisionDrops[i].velocity += 0.03
+                        collisionDrops[i].velocity += 1//0.03
                     }
                 }
             }
@@ -404,8 +414,60 @@ struct WaterDropView: View {
         collisionDrops.removeAll { $0.opacity <= 0.01 }
     }
     
-    // 물방울 잔흔 생성 함수
-    private func createDropletTrail(at position: CGPoint) {
+    // 새로 추가: 미끄러지는 물방울과 다른 물방울들 간의 충돌 검사
+    // 물줄기와 다른 물방울들 간의 충돌 검사 함수 수정
+    private func checkStreamCollisions(with streamDrop: CollisionDrop) {
+        // 물줄기가 아닌 경우 검사 건너뛰기
+        if !streamDrop.finalSlide {
+            return
+        }
+        
+        let collisionThreshold: CGFloat = 15.0  // 충돌 감지 반경
+        
+        // 1. 기존 정적 물방울들과의 충돌 검사
+        var collidedRaindrops: Set<UUID> = []
+        
+        for raindrop in raindrops {
+            let distance = hypot(
+                streamDrop.position.x - raindrop.position.x,
+                streamDrop.position.y - raindrop.position.y
+            )
+            
+            if distance < collisionThreshold {
+                collidedRaindrops.insert(raindrop.id)
+            }
+        }
+        
+        // 충돌한 정적 물방울들 모두 제거
+        if !collidedRaindrops.isEmpty {
+            raindrops.removeAll { collidedRaindrops.contains($0.id) }
+        }
+        
+        // 2. 스트림 물방울과의 충돌 검사
+        var collidedStreamDrops: Set<UUID> = []
+        
+        for streamDrop in waterStreamDrops {
+            let distance = hypot(
+                streamDrop.position.x - streamDrop.position.x,
+                streamDrop.position.y - streamDrop.position.y
+            )
+            
+            if distance < collisionThreshold {
+                collidedStreamDrops.insert(streamDrop.id)
+            }
+        }
+        
+        // 충돌한 스트림 물방울들 제거 (완전히 투명하게)
+        for i in 0..<waterStreamDrops.count {
+            if collidedStreamDrops.contains(waterStreamDrops[i].id) {
+                waterStreamDrops[i].opacity = 0  // 완전히 투명하게 설정하여 제거
+                waterStreamDrops[i].isFading = true
+            }
+        }
+    }
+    
+    // 물방울 잔흔 생성 함수 (크기 배율 파라미터 추가)
+    private func createDropletTrail(at position: CGPoint, sizeMultiplier: CGFloat = 1.0) {
         // 약간의 랜덤 오프셋 추가하여 자연스러운 느낌 부여
         let randomOffset = CGPoint(
             x: CGFloat.random(in: -3...3),
@@ -421,7 +483,7 @@ struct WaterDropView: View {
         let randomImage = trailDropImages.randomElement() ?? "waterdrop_01"
         
         // 랜덤한 크기로 시작 (원래 물방울보다 작게)
-        let size = CGFloat(30)
+        let size = CGFloat.random(in: 20...30) * sizeMultiplier
         
         let newTrail = DropletTrail(
             position: trailPosition,
@@ -456,6 +518,130 @@ struct WaterDropView: View {
         // 투명도가 0에 가까운 잔흔들 제거
         dropletTrails.removeAll { $0.opacity < 0.05 || $0.size < 1.0 }
     }
+    
+    // 물방울 충돌 검사
+    private func checkCollisionDropsInteraction() {
+        var processedDrops: Set<UUID> = []
+        let collisionThreshold: CGFloat = 20.0
+        
+        // 모든 물방울 간의 충돌 검사 (미끄러짐 상태가 아닌 물방울도 포함)
+        for i in 0..<collisionDrops.count {
+            let drop1 = collisionDrops[i]
+            
+            // 이미 처리된 물방울이면 건너뜀
+            if processedDrops.contains(drop1.id) {
+                continue
+            }
+            
+            for j in (i+1)..<collisionDrops.count {
+                let drop2 = collisionDrops[j]
+                
+                // 이미 처리된 물방울이면 건너뜀
+                if processedDrops.contains(drop2.id) {
+                    continue
+                }
+                
+                // 두 물방울 간의 거리 계산
+                let distance = hypot(
+                    drop1.position.x - drop2.position.x,
+                    drop1.position.y - drop2.position.y
+                )
+                
+                // 충돌 감지
+                if distance < collisionThreshold {
+                    processedDrops.insert(drop1.id)
+                    processedDrops.insert(drop2.id)
+                    
+                    // 충돌 처리 로직
+                    handleCollisionBetween(drop1: drop1, drop2: drop2, at: i, and: j)
+                }
+            }
+        }
+        
+        // 투명도가 낮아진 물방울 제거
+        collisionDrops.removeAll { $0.opacity < 0.1 }
+    }
+    
+    private func handleCollisionBetween(drop1: CollisionDrop, drop2: CollisionDrop, at index1: Int, and index2: Int) {
+            
+            // 어떤 물방울이 더 오래됐는지 확인
+            let drop1IsOlder = drop1.creationTime < drop2.creationTime
+            
+            // 간단한 룰: 가장 오래된 물방울만 살아남고, 나머지는 사라진다.
+            // 물줄기 상태인 물방울이 있으면 가장 오래된 물줄기만 살아남는다.
+            
+            if drop1.finalSlide && drop2.finalSlide {
+                // 두 물방울 모두 물줄기 상태일 때 가장 오래된 것만 살아남음
+                if drop1IsOlder {
+                    // drop1이 더 오래됨 - drop1은 살아남고, drop2는 사라짐
+                    if index2 < collisionDrops.count {
+                        collisionDrops[index2].opacity = 0
+                        collisionDrops[index2].finalSlide = false
+                        collisionDrops[index2].leaveDroplets = false
+                    }
+                } else {
+                    // drop2가 더 오래됨 - drop2는 살아남고, drop1은 사라짐
+                    if index1 < collisionDrops.count {
+                        collisionDrops[index1].opacity = 0
+                        collisionDrops[index1].finalSlide = false
+                        collisionDrops[index1].leaveDroplets = false
+                    }
+                }
+                
+                return
+            }
+            
+            // 하나만 물줄기 상태일 때
+            if drop1.finalSlide || drop2.finalSlide {
+                if drop1.finalSlide {
+                    // drop1이 물줄기 상태, drop2는 제거
+                    if index2 < collisionDrops.count {
+                        collisionDrops[index2].opacity = 0
+                        collisionDrops[index2].finalSlide = false
+                        collisionDrops[index2].leaveDroplets = false
+                    }
+                } else {
+                    // drop2가 물줄기 상태, drop1은 제거
+                    if index1 < collisionDrops.count {
+                        collisionDrops[index1].opacity = 0
+                        collisionDrops[index1].finalSlide = false
+                        collisionDrops[index1].leaveDroplets = false
+                    }
+                }
+                
+                return
+            }
+            
+            // 두 물방울 모두 일반 상태일 때, 가장 오래된 물방울만 물줄기가 됨
+            if drop1IsOlder {
+                // drop1이 더 오래됨 - drop1은 물줄기 상태로, drop2는 사라짐
+                if index1 < collisionDrops.count {
+                    collisionDrops[index1].finalSlide = true
+                    collisionDrops[index1].velocity = CGFloat.random(in: 3.0...5.0)
+                    collisionDrops[index1].leaveDroplets = true
+                }
+                
+                if index2 < collisionDrops.count {
+                    collisionDrops[index2].opacity = 0
+                    collisionDrops[index2].finalSlide = false
+                    collisionDrops[index2].leaveDroplets = false
+                }
+            } else {
+                // drop2가 더 오래됨 - drop2는 물줄기 상태로, drop1은 사라짐
+                if index2 < collisionDrops.count {
+                    collisionDrops[index2].finalSlide = true
+                    collisionDrops[index2].velocity = CGFloat.random(in: 3.0...5.0)
+                    collisionDrops[index2].leaveDroplets = true
+                }
+                
+                if index1 < collisionDrops.count {
+                    collisionDrops[index1].opacity = 0
+                    collisionDrops[index1].finalSlide = false
+                    collisionDrops[index1].leaveDroplets = false
+                }
+            }
+        }
+
     
     // Calculate X velocity based on device tilt
     private func getXVelocityFromMotion() -> CGFloat {
