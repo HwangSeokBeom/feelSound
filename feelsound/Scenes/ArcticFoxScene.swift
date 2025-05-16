@@ -65,7 +65,7 @@ class ArcticFoxScene: SKScene {
         foxNode = SKSpriteNode(texture: backTextures.first)
         foxNode.position = CGPoint(x: size.width * 0.5, y: size.height * 0.3)
         foxNode.zPosition = 1
-        foxNode.size = CGSize(width: 80, height: 80)
+        foxNode.size = CGSize(width: 99, height: 80)
         addChild(foxNode)
 
         startWalking()
@@ -85,7 +85,7 @@ class ArcticFoxScene: SKScene {
 
             let textures = self.texturesFor(direction: direction)
             let walkAnimation = SKAction.repeatForever(
-                SKAction.animate(with: textures, timePerFrame: 0.15)
+                SKAction.animate(with: textures, timePerFrame: 0.1) // 걷기 속도 조절
             )
             self.foxNode.run(walkAnimation, withKey: "walk")
 
@@ -97,7 +97,7 @@ class ArcticFoxScene: SKScene {
                               min: 40, max: self.size.height - 40)
             )
 
-            let moveAction = SKAction.move(to: clampedTargetPosition, duration: 3.0)
+            let moveAction = SKAction.move(to: clampedTargetPosition, duration: 2.5) // 이동 위치 변경 속도
             moveAction.timingMode = .easeInEaseOut
 
             let stopWalking = SKAction.run {
@@ -151,7 +151,7 @@ class ArcticFoxScene: SKScene {
             return
         }
 
-        let turnAnimation = SKAction.animate(with: textures, timePerFrame: 0.12)
+        let turnAnimation = SKAction.animate(with: textures, timePerFrame: 0.05) // 턴 속도
         let wait = SKAction.wait(forDuration: 0.3)
         let resume = SKAction.run(completion)
         foxNode.run(SKAction.sequence([turnAnimation, wait, resume]), withKey: "turning")
@@ -161,9 +161,9 @@ class ArcticFoxScene: SKScene {
         foxState = .resting(0)
         foxNode.removeAllActions()
 
-        let forward = SKAction.animate(with: restTextures, timePerFrame: 0.12)
+        let forward = SKAction.animate(with: restTextures, timePerFrame: 0.05) // 휴식 속도
         let pauseAtEnd = SKAction.wait(forDuration: 0.5)
-        let backward = SKAction.animate(with: restTextures.dropLast().reversed(), timePerFrame: 0.12)
+        let backward = SKAction.animate(with: restTextures.dropLast().reversed(), timePerFrame: 0.05) // 휴식 속도
         let setFirstTexture = SKAction.run { [weak self] in
             self?.foxNode.texture = self?.restTextures.first
         }
@@ -185,7 +185,7 @@ class ArcticFoxScene: SKScene {
     }
 
     private func scheduleNextWalk() {
-        let delay = Double.random(in: 2.0...4.0)
+        let delay = Double.random(in: 0.5...2.0)
         let wait = SKAction.wait(forDuration: delay)
         let start = SKAction.run { [weak self] in self?.startWalking() }
         run(SKAction.sequence([wait, start]), withKey: "nextWalk")
