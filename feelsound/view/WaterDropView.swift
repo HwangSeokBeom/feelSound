@@ -89,6 +89,7 @@ struct WaterDropView: View {
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(width: raindrop.size, height: raindrop.size)
+                            .rotationEffect(Angle(radians: raindrop.rotation))
                             .position(raindrop.position)
                     }
                     
@@ -98,6 +99,7 @@ struct WaterDropView: View {
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(width: drop.size, height: drop.size)
+                            .rotationEffect(Angle(radians: drop.rotation))
                             .position(drop.position)
                             .opacity(drop.opacity)
                     }
@@ -239,23 +241,16 @@ struct WaterDropView: View {
         activeStreams.removeAll()
         
         // Fade out effects
-        withAnimation(.easeOut(duration: 2)) {
+        withAnimation(.easeOut(duration: 3)) {
             raindrops.removeAll()
+            waterStreamDrops.removeAll()
             collisionDrops.removeAll()
-        }
-        
-        // 잔흔 물방울에도 fade 적용
-        for i in 0..<dropletTrails.count {
-            dropletTrails[i].opacity *= 0.9  // 빠르게 사라지게 함
-        }
-        
-        // Mark all water stream drops for fading
-        for i in 0..<waterStreamDrops.count {
-            waterStreamDrops[i].isFading = true
-        }
-        
-        rainScene?.children.forEach { node in
-            node.run(SKAction.fadeOut(withDuration: 1)) {
+            dropletTrails.removeAll()
+            
+            // SpriteKit 효과 제거
+            if let rainScene = self.rainScene {
+                rainScene.removeAllChildren()
+                rainScene.removeAllActions()
                 self.rainScene = nil
             }
         }
@@ -265,6 +260,8 @@ struct WaterDropView: View {
     private func createRaindrop(in size: CGSize) {
         let randomImage = mistImages.randomElement() ?? "waterdrop_01"
         
+        let tiltAngle = calculateTiltAngle()
+
         let newRaindrop = Raindrop(
             id: UUID(),
             position: CGPoint(
@@ -274,7 +271,8 @@ struct WaterDropView: View {
             size: CGFloat.random(in: 5...10),
             speed: CGFloat.random(in: 2...10),
             creationTime: Date(),
-            imageName: randomImage
+            imageName: randomImage,
+            rotation: tiltAngle // 기울기 각도 적용
         )
         
         raindrops.append(newRaindrop)
@@ -356,8 +354,8 @@ struct WaterDropView: View {
             size: dropSize,  // 크기 설정
             
             // 기존 속성 초기화
-            totalPauses: Int.random(in: 1...2),      // 2~4회 사이 랜덤하게 멈춤
-            pauseTime: Double.random(in: 0.5...1.0), // 멈춤 시간
+            totalPauses: Int.random(in: 0...3),      // 2~4회 사이 랜덤하게 멈춤
+            pauseTime: Double.random(in: 0.2...0.5), // 멈춤 시간
             fallTime: Double(0.15),  // 낙하 시간
             lastStateChangeTime: Date(),             // 상태 변경 시간
             
@@ -400,6 +398,14 @@ struct WaterDropView: View {
         for i in 0..<collisionDrops.count {
             // 이미지 변경 로직 (이전과 동일)
             let timeElapsedSinceLastChange = currentTime.timeIntervalSince(collisionDrops[i].lastImageChangeTime)
+            
+            let tiltAngle = calculateTiltAngle()
+            let targetRotation = tiltAngle
+            let currentRotation = collisionDrops[i].rotation
+            
+            let newRotation = currentRotation + (targetRotation - currentRotation) * 0.1
+            collisionDrops[i].rotation = newRotation
+            
             if timeElapsedSinceLastChange > 0.15 {
                 // 다음 이미지로 순환
                 collisionDrops[i].imageIndex = (collisionDrops[i].imageIndex + 1) % collisionDropImages.count
@@ -750,14 +756,51 @@ struct WaterDropView: View {
     
     // Check for drops that have gone out of bounds
     private func checkOutOfBoundsDrops(in size: CGSize) {
+        // 1. 물줄기 방울 처리
         for i in 0..<waterStreamDrops.count {
             let drop = waterStreamDrops[i]
             
-            if (drop.position.y > size.height + 30 || drop.position.x < -30 ||
-                drop.position.x > size.width + 30) && !drop.isFading {
+            if drop.position.y > size.height + 30 || drop.position.y < -30 ||
+               drop.position.x < -30 || drop.position.x > size.width + 30 {
+                waterStreamDrops[i].opacity = 0
                 waterStreamDrops[i].isFading = true
             }
         }
+        
+        // 2. 일반 물방울 처리
+        raindrops.removeAll { drop in
+            return drop.position.y > size.height + 30 || drop.position.y < -30 ||
+                   drop.position.x < -30 || drop.position.x > size.width + 30
+        }
+        
+        // 3. 충돌 물방울 처리
+        for i in 0..<collisionDrops.count {
+            if collisionDrops[i].position.y > size.height + 30 || collisionDrops[i].position.y < -30 ||
+               collisionDrops[i].position.x < -30 || collisionDrops[i].position.x > size.width + 30 {
+                collisionDrops[i].opacity = 0
+            }
+        }
+        
+        // 4. 물방울 잔흔 처리
+        dropletTrails.removeAll { trail in
+            return trail.position.y > size.height + 30 || trail.position.y < -30 ||
+                   trail.position.x < -30 || trail.position.x > size.width + 30
+        }
+        
+        // 5. 투명해진 요소들 정리
+        waterStreamDrops.removeAll { $0.opacity <= 0.01 }
+        collisionDrops.removeAll { $0.opacity <= 0.01 }
+    }
+    
+    // 기울기 각도 계산 함수
+    private func calculateTiltAngle() -> Double {
+        guard motionManager.isAccelerometerAvailable, let data = motionManager.accelerometerData else {
+            return 0
+        }
+        
+        // x축 기울기를 라디안으로 변환 (약 -π/4 ~ π/4 범위)
+        let angle = atan2(-data.acceleration.x, -data.acceleration.y)
+        return angle
     }
 }
 
@@ -769,6 +812,7 @@ struct Raindrop: Identifiable {
     var speed: CGFloat
     var creationTime: Date
     var imageName: String
+    var rotation: Double = 0
 }
 
 struct StreamDrop: Identifiable {
@@ -790,6 +834,7 @@ struct CollisionDrop: Identifiable {
     var lastImageChangeTime: Date // Track when we last changed the image
     var imageName: String  // 이미지 이름 추가
     var size: CGFloat      // 크기 추가
+    var rotation: Double = 0
     
     // 기존 속성
     var pauseCount: Int = 0                 // 현재까지 멈춘 횟수
