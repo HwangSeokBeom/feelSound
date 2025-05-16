@@ -22,13 +22,17 @@ struct WaterDropView: View {
     @State private var collisionDrops: [CollisionDrop] = []
     @State private var dropletTrails: [DropletTrail] = []  // 물방울 잔흔 배열 추가
     
+    // SpriteKit
+    @State private var rainScene: RainFall? = RainFall()
+    
     @State private var motionManager = CMMotionManager()
     @State private var deviceTilt = CGVector(dx: 0, dy: 0)
     @State private var isMotionActive = false
     
     // Constants
     private let maxRaindrops: Int = 500
-    private let waterdropImages = ["waterdrop_01", "waterdrop_02", "waterdrop_03", "waterdrop_04"]
+    private let waterdropImages = ["waterdrop_05", "waterdrop_06", "waterdrop_07"]
+    private let mistImages = ["waterdrop_01", "waterdrop_02", "waterdrop_03"]
     private let trailDropImages = ["waterdrop_01", "waterdrop_02"]  // 잔흔 물방울 이미지
     private let collisionDropImages = ["waterdrop_08"]
     private let collisionRadius: CGFloat = 15 // Collision detection radius
@@ -62,6 +66,13 @@ struct WaterDropView: View {
                             .position(trail.position)
                     }
                     
+                    // SpriteKit rain
+                    if let rainScene = rainScene {
+                        SpriteView(scene: rainScene, options: [.allowsTransparency])
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .allowsHitTesting(false)
+                    }
+                    
                     // Stream drops
                     ForEach(waterStreamDrops) { drop in
                         Image(drop.imageName)
@@ -81,12 +92,12 @@ struct WaterDropView: View {
                             .position(raindrop.position)
                     }
                     
-                    // Collision drops - animated drops that cycle through images
+                    // 충돌 물방울 표시 부분 수정
                     ForEach(collisionDrops) { drop in
-                        Image(collisionDropImages[drop.imageIndex])
+                        Image(drop.imageName)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(width: 30, height: 30)
+                            .frame(width: drop.size, height: drop.size)
                             .position(drop.position)
                             .opacity(drop.opacity)
                     }
@@ -95,6 +106,11 @@ struct WaterDropView: View {
                 // UI controls
                 VStack {
                     Spacer()
+                    
+                    if rainScene != nil {
+                        SpriteView(scene: RainFallLanding(), options: [.allowsTransparency])
+                            .frame(width: geometry.size.width, height: 50)
+                    }
                     
                     // Control buttons
                     HStack(spacing: 12) {
@@ -204,6 +220,11 @@ struct WaterDropView: View {
             
             self.checkOutOfBoundsDrops(in: size)
         }
+        
+        let scene = RainFall()
+        scene.backgroundColor = .clear
+        scene.motionManager = self.motionManager
+        rainScene = scene
     }
     
     // Stop rain animation
@@ -232,11 +253,17 @@ struct WaterDropView: View {
         for i in 0..<waterStreamDrops.count {
             waterStreamDrops[i].isFading = true
         }
+        
+        rainScene?.children.forEach { node in
+            node.run(SKAction.fadeOut(withDuration: 1)) {
+                self.rainScene = nil
+            }
+        }
     }
     
     // Create a new raindrop
     private func createRaindrop(in size: CGSize) {
-        let randomImage = waterdropImages.randomElement() ?? "waterdrop_01"
+        let randomImage = mistImages.randomElement() ?? "waterdrop_01"
         
         let newRaindrop = Raindrop(
             id: UUID(),
@@ -245,7 +272,7 @@ struct WaterDropView: View {
                 y: CGFloat.random(in: 0...size.height)
             ),
             size: CGFloat.random(in: 5...10),
-            speed: CGFloat.random(in: 2...5),
+            speed: CGFloat.random(in: 2...10),
             creationTime: Date(),
             imageName: randomImage
         )
@@ -311,6 +338,12 @@ struct WaterDropView: View {
     
     // Create a collision drop
     private func createCollisionDrop(at position: CGPoint) {
+        
+        let randomImageName = waterdropImages.randomElement() ?? "waterdrop_01"
+        
+        // 이미지에 따라 크기 결정
+        let dropSize = getDropSizeForImage(imageName: randomImageName)
+        
         let newCollisionDrop = CollisionDrop(
             id: UUID(),
             position: position,
@@ -319,11 +352,13 @@ struct WaterDropView: View {
             velocity: CGFloat.random(in: 1.5...3.0),
             imageIndex: 0,
             lastImageChangeTime: Date(),
+            imageName: randomImageName,  // 이미지 이름 저장
+            size: dropSize,  // 크기 설정
             
             // 기존 속성 초기화
-            totalPauses: Int.random(in: 1...4),      // 2~4회 사이 랜덤하게 멈춤
-            pauseTime: Double.random(in: 1.0...2.0), // 멈춤 시간
-            fallTime: Double(0.05),  // 낙하 시간
+            totalPauses: Int.random(in: 1...2),      // 2~4회 사이 랜덤하게 멈춤
+            pauseTime: Double.random(in: 0.5...1.0), // 멈춤 시간
+            fallTime: Double(0.15),  // 낙하 시간
             lastStateChangeTime: Date(),             // 상태 변경 시간
             
             // 물방울 흔적 관련 속성 초기화
@@ -338,6 +373,20 @@ struct WaterDropView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 15.0) {
             // 오래된 물방울을 안전하게 정리
             self.collisionDrops.removeAll { $0.id == newCollisionDrop.id }
+        }
+    }
+    
+    // 2. 이미지에 따른 크기를 반환하는 새로운 함수 추가
+    private func getDropSizeForImage(imageName: String) -> CGFloat {
+        switch imageName {
+        case "waterdrop_05":
+            return CGFloat(40)
+        case "waterdrop_06":
+            return CGFloat(70)
+        case "waterdrop_07":
+            return CGFloat(80)
+        default:
+            return 30.0
         }
     }
     
@@ -515,13 +564,13 @@ struct WaterDropView: View {
         let randomImage = trailDropImages.randomElement() ?? "waterdrop_01"
         
         // 랜덤한 크기로 시작 (원래 물방울보다 작게)
-        let size = CGFloat.random(in: 20...30) * sizeMultiplier
+        let size = CGFloat.random(in: 20...25) * sizeMultiplier
         
         let newTrail = DropletTrail(
             position: trailPosition,
             size: size,
             imageName: randomImage,
-            fadeTime: Double.random(in: 2.0...4.0) // 2~4초 사이에 사라짐
+            fadeTime: Double.random(in: 2.0...5.0) // 2~4초 사이에 사라짐
         )
         
         dropletTrails.append(newTrail)
@@ -564,7 +613,7 @@ struct WaterDropView: View {
         }
         
         // 투명도가 0에 가까운 잔흔들 제거
-        dropletTrails.removeAll { $0.opacity < 0.05 || $0.size < 1.0 }
+        dropletTrails.removeAll { $0.opacity < 0.01 || $0.size < 0.5 }
     }
     
     // 물방울 충돌 검사
@@ -739,6 +788,8 @@ struct CollisionDrop: Identifiable {
     var velocity: CGFloat = 0.0
     var imageIndex: Int = 0      // Current image index in the cycle
     var lastImageChangeTime: Date // Track when we last changed the image
+    var imageName: String  // 이미지 이름 추가
+    var size: CGFloat      // 크기 추가
     
     // 기존 속성
     var pauseCount: Int = 0                 // 현재까지 멈춘 횟수
@@ -776,7 +827,55 @@ struct DropletTrail: Identifiable {
     
     // 애니메이션 관련 속성
     var fadeTime: TimeInterval = 5.0  // 완전히 사라지는데 걸리는 시간
-    var shrinkRate: CGFloat = 0.97    // 매 업데이트마다 크기가 줄어드는 비율
+    var shrinkRate: CGFloat = 0.957    // 매 업데이트마다 크기가 줄어드는 비율
+}
+
+// SpriteKit Scene for Rain
+class RainFall: SKScene {
+    var motionManager: CMMotionManager?
+    private var emitterNode: SKEmitterNode?
+    
+    override func sceneDidLoad() {
+        size = UIScreen.main.bounds.size
+        scaleMode = .resizeFill
+        anchorPoint = CGPoint(x: 0.5, y: 0)
+        backgroundColor = .clear
+        
+        if let rainNode = SKEmitterNode(fileNamed: "Rain.sks") {
+            rainNode.position = CGPoint(x: size.width / 2, y: 1000)
+            rainNode.particlePositionRange = CGVector(dx: size.width * 2, dy: 0)
+            rainNode.zPosition = 1
+            emitterNode = rainNode
+            addChild(rainNode)
+        }
+    }
+    
+    override func update(_ currentTime: TimeInterval) {
+        updateRainDirection()
+    }
+    
+    private func updateRainDirection() {
+        guard let motionManager = motionManager, let emitter = emitterNode else { return }
+        
+        let maxDeflection: CGFloat = 200
+        let xSpeed = CGFloat(motionManager.isAccelerometerAvailable ? motionManager.accelerometerData?.acceleration.x ?? 0 : 0) * maxDeflection
+        
+        emitter.xAcceleration = xSpeed
+    }
+}
+
+class RainFallLanding: SKScene {
+    override func sceneDidLoad() {
+        size = UIScreen.main.bounds.size
+        scaleMode = .resizeFill
+        anchorPoint = CGPoint(x: 0.5, y: 0)
+        backgroundColor = .clear
+        
+        if let node = SKEmitterNode(fileNamed: "RainFallLanding.sks") {
+            node.particlePositionRange = CGVector(dx: 240, dy: 0)
+            addChild(node)
+        }
+    }
 }
 
 // Button Style
