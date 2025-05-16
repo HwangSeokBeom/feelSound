@@ -9,7 +9,7 @@ import SwiftUI
 import SpriteKit
 
 struct CharacterView: View {
-    let scene = IndoorScene()
+    let scene = ArcticFoxScene()
 
     var body: some View {
         ZStack {
