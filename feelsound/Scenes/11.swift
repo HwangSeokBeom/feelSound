@@ -105,11 +105,18 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
         vertices.removeAll()
         indices.removeAll()
 
+        let padding: Float = 0.1 // 👈 화면보다 5% 크게
+
         for row in 0..<rows {
             for col in 0..<cols {
                 let x = Float(col) / Float(cols - 1)
                 let y = Float(row) / Float(rows - 1)
-                let pos = SIMD2<Float>(x * 2 - 1, y * 2 - 1)
+                
+                // 👇 padding을 곱해 위치를 살짝 확장
+                let pos = SIMD2<Float>(
+                    (x * 2 - 1) * (1 + padding),
+                    (y * 2 - 1) * (1 + padding)
+                )
                 let uv = SIMD2<Float>(x, y)
                 vertices.append(SlimeVertex(position: pos, uv: uv, original: pos))
             }
@@ -126,8 +133,16 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
             }
         }
 
-        vertexBuffer = device.makeBuffer(bytes: vertices, length: MemoryLayout<SlimeVertex>.stride * vertices.count, options: [])
-        indexBuffer = device.makeBuffer(bytes: indices, length: MemoryLayout<UInt16>.stride * indices.count, options: [])
+        vertexBuffer = device.makeBuffer(
+            bytes: vertices,
+            length: MemoryLayout<SlimeVertex>.stride * vertices.count,
+            options: []
+        )
+        indexBuffer = device.makeBuffer(
+            bytes: indices,
+            length: MemoryLayout<UInt16>.stride * indices.count,
+            options: []
+        )
     }
 
     func handleTouches(_ touches: Set<UITouch>, in view: UIView) {
