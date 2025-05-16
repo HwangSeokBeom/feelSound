@@ -5,11 +5,6 @@
 //  Created by Hwangseokbeom on 5/13/25.
 //
 
-//
-//  SlimeRenderer.swift
-//  feelsound
-//
-
 import Foundation
 import MetalKit
 import AVFoundation
