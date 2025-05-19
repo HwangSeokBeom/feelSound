@@ -12,7 +12,9 @@ class ArcticFoxScene: SKScene {
     private var foxNode: SKSpriteNode!
     private var foxState: FoxState = .idle
     private var lastDirection: Direction? = nil
-
+    
+    private var tailTextures: [SKTexture] = []
+    
     private var frontTextures: [SKTexture] = []
     private var backTextures: [SKTexture] = []
     private var leftTextures: [SKTexture] = []
@@ -55,10 +57,13 @@ class ArcticFoxScene: SKScene {
 
         turnFromRightToFrontTextures = (1...6).map { SKTexture(imageNamed: "오른쪽으로_걷다가_정면_보기_\($0)") }
         turnFromLeftToFrontTextures = (1...6).map { SKTexture(imageNamed: "왼쪽으로_걷다가_정면_보기_\($0)") }
-
         // 역순으로 재생하기 위한 시퀀스
         turnFromFrontToRightTextures = turnFromRightToFrontTextures.reversed()
         turnFromFrontToLeftTextures = turnFromLeftToFrontTextures.reversed()
+        
+        tailTextures = (1...6).compactMap {
+            SKTexture(imageNamed: "꼬리흔들기_\($0)")
+        }
     }
 
     private func setupFox() {
@@ -84,10 +89,20 @@ class ArcticFoxScene: SKScene {
             self.foxNode.removeAllActions()
 
             let textures = self.texturesFor(direction: direction)
-            let walkAnimation = SKAction.repeatForever(
-                SKAction.animate(with: textures, timePerFrame: 0.1) // 걷기 속도 조절
-            )
-            self.foxNode.run(walkAnimation, withKey: "walk")
+            let walkAnimation = SKAction.animate(with: textures, timePerFrame: 0.1)
+            walkAnimation.timingFunction = { t in
+                return pow(t, 0.8) // 조금 느리게 시작해서 부드럽게 빨라짐
+            }
+            let walkLoop = SKAction.repeatForever(walkAnimation)
+
+            //  몸 기울이기(좌우로 흔들림) 애니메이션 추가
+            let tilt = SKAction.sequence([
+                SKAction.rotate(toAngle: 0.005, duration: 0.25, shortestUnitArc: true),
+                SKAction.rotate(toAngle: -0.005, duration: 0.25, shortestUnitArc: true)
+            ])
+            let tiltLoop = SKAction.repeatForever(tilt)
+
+            self.foxNode.run(SKAction.group([walkLoop, tiltLoop]), withKey: "walk")
 
             let moveDistance: CGFloat = 100
             let clampedTargetPosition = CGPoint(
@@ -97,11 +112,11 @@ class ArcticFoxScene: SKScene {
                               min: 40, max: self.size.height - 40)
             )
 
-            let moveAction = SKAction.move(to: clampedTargetPosition, duration: 2.5) // 이동 위치 변경 속도
+            let moveAction = SKAction.move(to: clampedTargetPosition, duration: 2.5)
             moveAction.timingMode = .easeInEaseOut
 
             let stopWalking = SKAction.run {
-                self.foxNode.removeAction(forKey: "walk")
+                self.foxNode.removeAllActions()
 
                 let textures = self.texturesFor(direction: direction)
                 switch direction {
@@ -111,6 +126,7 @@ class ArcticFoxScene: SKScene {
                     self.foxNode.texture = textures.last
                 }
 
+                self.foxNode.zRotation = 0 // 흔들림 리셋
                 self.foxState = .idle
             }
 
@@ -119,17 +135,21 @@ class ArcticFoxScene: SKScene {
 
             let wait = SKAction.wait(forDuration: 3.0)
             let next = SKAction.run {
-                if Bool.random(probability: 0.25) {
-                    self.enterRestingState()
+                
+                let rand = Double.random(in: 0...1)
+                if rand < 0.15 {
+                    self.enterRestingState()           // 15%
+                } else if rand < 0.3 {
+                    self.enterTailWaggingState()       // 15%
                 } else {
-                    self.scheduleNextWalk()
+                    self.scheduleNextWalk()            // 70%
                 }
             }
             self.run(SKAction.sequence([wait, next]), withKey: "decision")
 
             self.lastDirection = direction
         }
-        
+
         if let previous = lastDirection {
             playTurnAnimation(from: previous, to: direction, completion: continueWalk)
         } else {
@@ -182,6 +202,28 @@ class ArcticFoxScene: SKScene {
         ])
 
         foxNode.run(restSequence, withKey: "resting")
+    }
+    
+    private func enterTailWaggingState() {
+        foxState = .resting(1)
+        foxNode.removeAllActions()
+
+        let wag = SKAction.animate(with: tailTextures, timePerFrame: 0.15)
+        let wagLoop = SKAction.sequence([
+            SKAction.repeat(wag, count: 2),
+            SKAction.wait(forDuration: 0.3)
+        ])
+
+        let reset = SKAction.run { [weak self] in
+            self?.foxNode.texture = self?.tailTextures.first
+        }
+
+        let resume = SKAction.run { [weak self] in
+            self?.scheduleNextWalk()
+        }
+
+        let sequence = SKAction.sequence([wagLoop, reset, resume])
+        foxNode.run(sequence, withKey: "tailWagOnly")
     }
 
     private func scheduleNextWalk() {
