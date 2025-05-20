@@ -54,61 +54,64 @@ fragment float4 slime_fragment(VertexOut in [[stage_in]],
     for (int i = 0; i < maxTouches; ++i) {
         float2 pos = touchInputs[i].xy;
         float force = touchInputs[i].z;
-
         float dist = distance(screenPos, pos);
-        float ripple = 0.0;
+        float2 pressOffset = float2(0.0);
 
-        if (deform.shapeType == 0) {
-            ripple = sin(dist * deform.waveFreq - u_time * deform.waveSpeed)
-                   * deform.intensity / (dist * deform.waveFreq + 1.0);
-        } else if (deform.shapeType == 1) {
-            ripple = sin(dist * deform.waveFreq * 1.5 + cos(dist * 20.0 - u_time * 10.0))
-                   * deform.intensity * 0.5;
-        } else if (deform.shapeType == 2) {
-            ripple = cos(dist * deform.waveFreq - u_time * deform.waveSpeed)
-                   * exp(-dist * 8.0) * deform.intensity * 2.0;
-        } else if (deform.shapeType == 3) {
-            ripple = smoothstep(0.5, 0.0, dist) * deform.intensity;
+        if (deform.shapeType == 5) {
+            float falloff = exp(-pow(dist * 6.0, 2.0));
+            float intensity = -0.04 * force * deform.intensity;
+            pressOffset = normalize(screenPos - pos) * intensity * falloff;
         } else if (deform.shapeType == 4) {
-            ripple = step(0.02, fract(dist * deform.waveFreq - u_time * deform.waveSpeed))
-                   * deform.intensity * 0.7;
+            float ripple = sin(dist * 20.0 - u_time * 8.0) * deform.intensity * 0.6 * force;
+            float angle = fract(sin(dot(screenPos + pos, float2(12.9898, 78.233))) * 43758.5453) * 6.2831;
+            float2 rippleOffset = float2(cos(angle), sin(angle)) * 0.3;
+            pressOffset = ripple * rippleOffset;
+        } else {
+            float ripple = 0.0;
+            float2 rippleOffset = float2(1.0, 0.6);
+
+            if (deform.shapeType == 0) {
+                ripple = sin(dist * 8.0 - u_time * 2.0) * exp(-dist * 3.0) * force * deform.intensity;
+                rippleOffset = normalize(screenPos - pos);
+            } else if (deform.shapeType == 1) {
+                ripple = sin(dist * 40.0 - u_time * 8.0 + fract(screenPos.x * 13.37)) * deform.intensity * 0.5 * force;
+                rippleOffset = float2(cos(u_time * 10.0), sin(u_time * 12.0));
+            } else if (deform.shapeType == 2) {
+                ripple = smoothstep(0.3, 0.0, dist - sin(u_time * 3.0)) * deform.intensity * 2.0 * force;
+                rippleOffset = normalize(pos - screenPos);
+            } else if (deform.shapeType == 3) {
+                ripple = (1.0 - dist) * sin(u_time + screenPos.x * 3.0) * deform.intensity * 1.2 * force;
+                rippleOffset = float2(0.4, 0.2);
+            }
+
+            pressOffset = ripple * rippleOffset;
         }
 
-        float2 rippleOffset = float2(1.0, 0.6);
-        if (deform.shapeType == 1) rippleOffset = float2(0.8, 1.0);
-        else if (deform.shapeType == 2) rippleOffset = float2(-1.0, 1.0);
-        else if (deform.shapeType == 3) rippleOffset = float2(0.5, 0.3);
-        else if (deform.shapeType == 4) rippleOffset = float2(1.5, -0.5);
-
-        offset += ripple * rippleOffset;
+        offset += pressOffset;
     }
 
-    // (2) 기본 애니메이션: 터치가 없을 때도 흔들림 효과 제공
+    // (2) 기본 애니메이션 (터치 없을 때)
     if (maxTouches == 0) {
         float ripple = 0.0;
         float2 rippleOffset = float2(0.0);
         float dist = length(screenPos);
-        
+
         if (deform.shapeType == 0) {
-            // fudge: 물결이 계속 흐르듯, 시간 따라 중심 이동
             ripple = sin(dist * 10.0 + u_time * 3.0) * deform.intensity * 1.5;
             rippleOffset = float2(sin(u_time * 0.9 + screenPos.y * 3.0), cos(u_time * 0.6 + screenPos.x * 3.0)) * 0.5;
         } else if (deform.shapeType == 1) {
-            // glitter: 고속 진동 유지
             ripple = sin(dist * 40.0 + u_time * 8.0 + cos(dist * 10.0)) * deform.intensity * 0.5;
             rippleOffset = float2(0.4 * sin(u_time * 2.0), 0.4 * cos(u_time * 2.0));
         } else if (deform.shapeType == 2) {
-            // bubble: 중심에서 밖으로 퍼지는 호흡처럼
             ripple = sin(dist * 12.0 - u_time * 5.0) * deform.intensity * 1.4;
             rippleOffset = normalize(screenPos) * (0.25 + 0.15 * sin(u_time * 2.0));
         } else if (deform.shapeType == 3) {
-            // moss: 점성이 흐르는 방향성 + 웨이브 섞기
             ripple = sin(dist * 6.0 + u_time * 1.5) * deform.intensity * 1.7;
             rippleOffset = float2(0.4, 0.1) * sin(u_time + dist * 4.0);
         } else if (deform.shapeType == 4) {
-            // metallic: 빠르게 반짝이며 흔들림 유지
-            ripple = step(0.05, fract(dist * 15.0 + u_time * 3.0)) * deform.intensity * 0.8;
-            rippleOffset = float2(cos(u_time * 2.0), sin(u_time * 3.0)) * 0.3;
+            float ripple = sin(dist * 20.0 - u_time * 8.0) * deform.intensity * 0.6;
+            float angle = fract(sin(dot(screenPos, float2(23.456, 87.654))) * 12345.6789) * 6.2831;
+            rippleOffset = float2(cos(angle), sin(angle)) * 0.3;
         }
 
         offset += ripple * rippleOffset;
