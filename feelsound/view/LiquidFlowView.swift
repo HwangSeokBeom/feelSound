@@ -273,6 +273,14 @@ struct LiquidFlowView: View {
                                 .foregroundColor(.white)
 
                         }
+                        
+                        Button {
+                            router.navigate(to: .sampleView8)
+                        } label: {
+                            Text("SampleView8")
+                                .foregroundColor(.white)
+
+                        }
                     }
                 }
                 
