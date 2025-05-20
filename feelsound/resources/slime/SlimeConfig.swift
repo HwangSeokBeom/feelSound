@@ -1,16 +1,16 @@
+////
+////  Untitled.swift
+////  feelsound
+////
+////  Created by Hwangseokbeom on 5/15/25.
+////
 //
-//  Untitled.swift
-//  feelsound
+//import Foundation
 //
-//  Created by Hwangseokbeom on 5/15/25.
+//struct SlimeConfig {
+//    let elasticity: Float
+//    let damping: Float
+//    let soundProfile: SlimeSoundProfile
+//}
 //
-
-import Foundation
-
-struct SlimeConfig {
-    let elasticity: Float
-    let damping: Float
-    let soundProfile: SlimeSoundProfile
-}
-
-
+//

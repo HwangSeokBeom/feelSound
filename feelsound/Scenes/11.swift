@@ -237,6 +237,7 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
 
         var maxTouches = 5
         var currentTime = time
+        var deform = config.deformation.toMetalStruct() // ✅ deform 생성
 
         let commandBuffer = commandQueue.makeCommandBuffer()!
         let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)!
@@ -244,9 +245,10 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
         encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
         encoder.setFragmentTexture(texture, index: 0)
         encoder.setFragmentSamplerState(samplerState, index: 0)
+        encoder.setFragmentBytes(&currentTime, length: MemoryLayout<Float>.stride, index: 1)
         encoder.setFragmentBytes(&touchData, length: MemoryLayout<SIMD3<Float>>.stride * 5, index: 2)
         encoder.setFragmentBytes(&maxTouches, length: MemoryLayout<Int>.stride, index: 3)
-        encoder.setFragmentBytes(&currentTime, length: MemoryLayout<Float>.stride, index: 1)
+        encoder.setFragmentBytes(&deform, length: MemoryLayout<DeformationParams>.stride, index: 4) // ✅ 여기에 추가
         encoder.drawIndexedPrimitives(type: .triangle, indexCount: indices.count, indexType: .uint16, indexBuffer: indexBuffer, indexBufferOffset: 0)
         encoder.endEncoding()
         commandBuffer.present(drawable)
