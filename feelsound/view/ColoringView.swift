@@ -18,8 +18,8 @@ struct ColoringView: View {
     @State private var currentAreaMask: [[Bool]]? = nil // 현재 영역을 추적하는 마스크
     @State private var showColorPalette = false // 컬러 팔레트 모달을 제어하는 상태
     @State private var paletteHeight: CGFloat = 50 // 기본 모달 높이
-    private let collapsedPaletteHeight: CGFloat = 50 // 접힌 상태 높이
-    private let expandedPaletteHeight: CGFloat = 250 // 펼친 상태 높이
+    private let collapsedPaletteHeight: CGFloat = 80 // 접힌 상태 높이
+    private let expandedPaletteHeight: CGFloat = 200 // 펼친 상태 높이
     
     // 사용 가능한 색상 팔레트
     let colors: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .pink]
@@ -87,27 +87,32 @@ struct ColoringView: View {
                 }
                 .padding(20)
                 
-                // 색칠할 이미지
-                if let floodFillImage = floodFillImage {
-                    DrawableImageView(image: floodFillImage, onDraw: handleDraw, onDrawingStateChanged: handleDrawingStateChanged)
-                        .frame(maxWidth: .infinity)
-                        .aspectRatio(contentMode: .fit)
-                        .background(Color.white)
-                } else {
-                    if let image = UIImage(named: "panda") {
-                        DrawableImageView(image: image, onDraw: handleDraw, onDrawingStateChanged: handleDrawingStateChanged)
+                VStack{
+                    // 색칠할 이미지
+                    if let floodFillImage = floodFillImage {
+                        DrawableImageView(image: floodFillImage, onDraw: handleDraw, onDrawingStateChanged: handleDrawingStateChanged)
                             .frame(maxWidth: .infinity)
                             .aspectRatio(contentMode: .fit)
                             .background(Color.white)
-                            .onAppear(perform: initializeImage)
                     } else {
-                        Text("이미지를 찾을 수 없습니다")
-                            .foregroundColor(.red)
+                        if let image = UIImage(named: "panda") {
+                            DrawableImageView(image: image, onDraw: handleDraw, onDrawingStateChanged: handleDrawingStateChanged)
+                                .frame(maxWidth: .infinity)
+                                .aspectRatio(contentMode: .fit)
+                                .background(Color.white)
+                                .onAppear(perform: initializeImage)
+                        } else {
+                            Text("이미지를 찾을 수 없습니다")
+                                .foregroundColor(.red)
+                        }
                     }
+                    
+                    Spacer()
                 }
+                .padding(.top, 40)
+                .background(Color.gray)
                 
-                // 모달뷰 위의 공간
-                Spacer(minLength: paletteHeight)
+                Spacer()
             }
             .background(.black)
             .padding(.bottom, 0)
@@ -129,8 +134,10 @@ struct ColoringView: View {
                             }
                         }) {
                             Image(systemName: showColorPalette ? "chevron.down" : "chevron.up")
+                                .resizable()
                                 .foregroundColor(.white)
-                                .padding(10)
+                                .frame(width: 20,
+                                       height: 14)
                         }
                         .padding(.top, -20) // 토글 버튼을 모달 위로 올림
                         
@@ -178,10 +185,9 @@ struct ColoringView: View {
                     }
                 }
                 .frame(height: paletteHeight)
-                .background(Color(UIColor.systemBackground))
+                .background(Color.black)
                 .cornerRadius(20, corners: [.topLeft, .topRight])
                 .shadow(radius: 5)
-                .offset(y: -10) // 모달을 약간 위로 조정
                 .animation(.spring(), value: paletteHeight)
             }
             .edgesIgnoringSafeArea(.bottom)
@@ -204,7 +210,7 @@ struct ColoringView: View {
         floodFillImage = originalImage
     }
     
-    // 드로잉을 위한 UIViewRepresentable
+    // 드로잉을 위한 UIView
     struct DrawableImageView: UIViewRepresentable {
         var image: UIImage
         var onDraw: (CGPoint) -> Void
