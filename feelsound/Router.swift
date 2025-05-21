@@ -13,6 +13,7 @@ final class Router: ObservableObject {
         case sampleView1
         case sampleView2
         case sampleView3
+        case coloring
     }
     
     @Published var navPath = NavigationPath()

@@ -54,7 +54,12 @@ struct ContentView: View {
                     case .sampleView3:
                         FortuneCookieView()
                             .toolbar(.hidden)
+                        
+                    case .coloring:
+                        ColoringView()
+                            .toolbar(.hidden)
                     }
+                    
                 }
                 .navigationBarHidden(true)
                 .overlay(alignment : .bottom){

@@ -30,7 +30,7 @@ struct FortuneCookieView: View {
                         
             WiseSaying(showText : $showText)
             
-            FortuneCookie(showText : $showText)
+            Coloring(showText : $showText)
         }
     }
 }
@@ -47,7 +47,7 @@ struct WiseSaying : View{
     }
 }
 
-struct FortuneCookie: View {
+struct Coloring: View {
     @State var isPaused : Bool = false
     @State var played : Bool = false
     @State private var toggleCount: Int = 0
