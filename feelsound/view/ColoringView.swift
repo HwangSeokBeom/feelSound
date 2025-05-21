@@ -9,8 +9,7 @@ import SwiftUI
 
 struct ColoringView: View {
     @Environment(\.dismiss) private var dismiss
-    
-    // MARK: 기능 부분
+
     @State private var floodFillImage: UIImage?
     @State private var selectedColor: Color = .red
     @State private var showingColorPicker = false
@@ -20,6 +19,10 @@ struct ColoringView: View {
     @State private var paletteHeight: CGFloat = 50 // 기본 모달 높이
     private let collapsedPaletteHeight: CGFloat = 80 // 접힌 상태 높이
     private let expandedPaletteHeight: CGFloat = 200 // 펼친 상태 높이
+    
+    @State private var previousDrawPoint: CGPoint? = nil
+
+
     
     // 사용 가능한 색상 팔레트
     let colors: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .pink]
@@ -250,63 +253,74 @@ struct ColoringView: View {
                 guard let imageView = gesture.view as? UIImageView,
                       let image = imageView.image else { return }
                 
-                // 이미지뷰 내에서의 실제 이미지 프레임 계산
+                // 이미지뷰의 실제 이미지 프레임 계산 - 더 정확한 계산
                 let viewSize = imageView.bounds.size
                 let imageSize = image.size
                 
-                let scale: CGFloat
-                var realX: CGFloat = 0
-                var realY: CGFloat = 0
+                // 이미지가 실제로 그려지는 영역과 스케일 계산
+                var imageFrame = CGRect.zero
+                var scale: CGFloat = 1.0
                 
-                // 이미지의 비율에 따라 실제 표시 크기 계산
                 if imageSize.width / imageSize.height > viewSize.width / viewSize.height {
                     // 너비에 맞춰진 경우
                     scale = viewSize.width / imageSize.width
-                    let scaledHeight = imageSize.height * scale
-                    let yOffset = (viewSize.height - scaledHeight) / 2
-                    
-                    realX = location.x / scale
-                    realY = (location.y - yOffset) / scale
+                    let scaledHeight = viewSize.width * (imageSize.height / imageSize.width)
+                    imageFrame = CGRect(x: 0,
+                                      y: (viewSize.height - scaledHeight) / 2,
+                                      width: viewSize.width,
+                                      height: scaledHeight)
                 } else {
                     // 높이에 맞춰진 경우
                     scale = viewSize.height / imageSize.height
-                    let scaledWidth = imageSize.width * scale
-                    let xOffset = (viewSize.width - scaledWidth) / 2
-                    
-                    realX = (location.x - xOffset) / scale
-                    realY = location.y / scale
+                    let scaledWidth = viewSize.height * (imageSize.width / imageSize.height)
+                    imageFrame = CGRect(x: (viewSize.width - scaledWidth) / 2,
+                                      y: 0,
+                                      width: scaledWidth,
+                                      height: viewSize.height)
                 }
                 
-                // 범위 확인
-                if realX >= 0 && realX < imageSize.width && realY >= 0 && realY < imageSize.height {
-                    let currentPoint = CGPoint(x: realX, y: realY)
-                    
-                    // 제스처 상태에 따라 드로잉 시작/진행/종료 처리
-                    if gesture.state == .began {
-                        parent.onDrawingStateChanged(true)
-                        lastPoint = currentPoint
-                        parent.onDraw(currentPoint)
-                    } else if gesture.state == .changed {
-                        // 이전 포인트가 있으면 보간해서 선 그리기
-                        if let lastPoint = lastPoint {
-                            // 이전 점과 현재 점 사이를 부드럽게 보간
-                            interpolatePoints(from: lastPoint, to: currentPoint)
-                        }
-                        lastPoint = currentPoint
-                    } else if gesture.state == .ended || gesture.state == .cancelled {
-                        parent.onDrawingStateChanged(false)
-                        lastPoint = nil
+                // 터치 위치가 이미지 영역 안에 있는지 확인
+                guard imageFrame.contains(location) else { return }
+                
+                // 이미지 내에서의 정규화된 좌표 계산 (0~1 범위)
+                let normalizedX = (location.x - imageFrame.origin.x) / imageFrame.width
+                let normalizedY = (location.y - imageFrame.origin.y) / imageFrame.height
+                
+                // 정규화된 좌표를 원본 이미지 픽셀 좌표로 변환
+                let pixelX = normalizedX * imageSize.width
+                let pixelY = normalizedY * imageSize.height
+                
+                let currentPoint = CGPoint(x: pixelX, y: pixelY)
+                
+                // 제스처 상태에 따라 드로잉 처리
+                if gesture.state == .began {
+                    parent.onDrawingStateChanged(true)
+                    lastPoint = currentPoint
+                    parent.onDraw(currentPoint)
+                } else if gesture.state == .changed {
+                    if let lastPoint = lastPoint {
+                        interpolatePoints(from: lastPoint, to: currentPoint)
                     }
+                    lastPoint = currentPoint
+                } else if gesture.state == .ended || gesture.state == .cancelled {
+                    parent.onDrawingStateChanged(false)
+                    lastPoint = nil
                 }
             }
             
             // 두 점 사이를 매우 촘촘하게 보간하는 함수
             private func interpolatePoints(from startPoint: CGPoint, to endPoint: CGPoint) {
                 let distance = hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y)
-                // 간격이 없는 연속된 선을 위해 점 간격을 최소화 (거리당 최소 5개 이상의 점)
-                let numberOfPoints = max(Int(distance * 5), 30) // 점 개수 크게 증가
                 
-                for i in 0...numberOfPoints {
+                // 더 많은 점을 생성하도록 수정
+                let numberOfPoints = max(Int(distance), 10) // 최소 10개 점으로 증가
+                
+                if numberOfPoints < 2 { // 거리가 너무 짧으면 중간점 생성 안함
+                    parent.onDraw(endPoint)
+                    return
+                }
+                
+                for i in 1...numberOfPoints {
                     let ratio = CGFloat(i) / CGFloat(numberOfPoints)
                     let x = startPoint.x + (endPoint.x - startPoint.x) * ratio
                     let y = startPoint.y + (endPoint.y - startPoint.y) * ratio
@@ -324,6 +338,7 @@ struct ColoringView: View {
         // 드로잉이 끝나면 현재 영역 마스크 초기화
         if !isCurrentlyDrawing {
             currentAreaMask = nil
+            previousDrawPoint = nil
         }
     }
     
@@ -340,15 +355,145 @@ struct ColoringView: View {
                 // 현재 영역 마스크와 이미지 동시에 가져오기
                 let (maskAndImage) = self.createAreaMask(image: currentImage, at: location)
                 self.currentAreaMask = maskAndImage.0
+                
+                // 첫 번째 점은 점으로 그리기
                 coloredImage = self.drawColor(image: maskAndImage.1, at: location, with: UIColor(self.selectedColor))
+                self.previousDrawPoint = location
+            } else if let previousPoint = self.previousDrawPoint {
+                // 이전 점이 있으면 이전 점과 현재 점 사이에 선 그리기
+                coloredImage = self.drawLine(image: currentImage, from: previousPoint, to: location, with: UIColor(self.selectedColor))
+                self.previousDrawPoint = location
             } else {
+                // 첫 점은 점으로 그리기
                 coloredImage = self.drawColor(image: currentImage, at: location, with: UIColor(self.selectedColor))
+                self.previousDrawPoint = location
             }
             
             DispatchQueue.main.async {
                 self.floodFillImage = coloredImage
             }
         }
+    }
+    
+    // 두 점 사이에 선을 그리는 함수
+    func drawLine(image: UIImage, from startPoint: CGPoint, to endPoint: CGPoint, with color: UIColor) -> UIImage {
+        guard let cgImage = image.cgImage else { return image }
+        let width = cgImage.width
+        let height = cgImage.height
+        
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bytesPerPixel = 4
+        let bytesPerRow = bytesPerPixel * width
+        let bitsPerComponent = 8
+        
+        let context = CGContext(data: nil,
+                                width: width,
+                                height: height,
+                                bitsPerComponent: bitsPerComponent,
+                                bytesPerRow: bytesPerRow,
+                                space: colorSpace,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        
+        guard let data = context.data else { return image }
+        
+        let pixelData = data.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel)
+        
+        // 새 색상 준비
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        
+        let newRed = UInt8(red * 255)
+        let newGreen = UInt8(green * 255)
+        let newBlue = UInt8(blue * 255)
+        
+        // 현재 영역 마스크가 없으면 새로 생성해야 함 (이 부분은 handleDraw에서 처리)
+        guard let areaMask = currentAreaMask, isDrawing else {
+            return image
+        }
+        
+        // 브러시 크기
+        let brushRadius = 5
+        
+        // 브레젠험 알고리즘을 사용하여 선 그리기
+        let dx = abs(Int(endPoint.x) - Int(startPoint.x))
+        let dy = abs(Int(endPoint.y) - Int(startPoint.y))
+        let sx = Int(startPoint.x) < Int(endPoint.x) ? 1 : -1
+        let sy = Int(startPoint.y) < Int(endPoint.y) ? 1 : -1
+        var err = dx - dy
+        
+        var x = Int(startPoint.x)
+        var y = Int(startPoint.y)
+        
+        while true {
+            // 각 점에서 원형 브러시로 색칠
+            for by in -brushRadius...brushRadius {
+                for bx in -brushRadius...brushRadius {
+                    // 원 내부만 색칠
+                    if bx*bx + by*by > brushRadius*brushRadius {
+                        continue
+                    }
+                    
+                    let nx = x + bx
+                    let ny = y + by
+                    
+                    // 이미지 범위 확인
+                    if nx < 0 || nx >= width || ny < 0 || ny >= height {
+                        continue
+                    }
+                    
+                    // 현재 영역 마스크 확인 - 영역 내에 있는 픽셀만 색칠
+                    if ny < areaMask.count && nx < areaMask[ny].count && areaMask[ny][nx] {
+                        let offset = (ny * bytesPerRow) + (nx * bytesPerPixel)
+                        
+                        // 현재 픽셀 색상 확인 (검은색 선 위는 색칠하지 않음)
+                        let currentRed = pixelData[offset]
+                        let currentGreen = pixelData[offset + 1]
+                        let currentBlue = pixelData[offset + 2]
+                        
+                        let isNotBlackLine = currentRed >= 30 || currentGreen >= 30 || currentBlue >= 30
+                        
+                        if isNotBlackLine {
+                            // 색상 변경
+                            pixelData[offset] = newRed
+                            pixelData[offset + 1] = newGreen
+                            pixelData[offset + 2] = newBlue
+                        }
+                    }
+                }
+            }
+            
+            // 종료 조건 확인
+            if x == Int(endPoint.x) && y == Int(endPoint.y) {
+                break
+            }
+            
+            // 다음 점으로 이동
+            let e2 = 2 * err
+            if e2 > -dy {
+                err -= dy
+                x += sx
+            }
+            if e2 < dx {
+                err += dx
+                y += sy
+            }
+        }
+        
+        let newContext = CGContext(data: data,
+                                   width: width,
+                                   height: height,
+                                   bitsPerComponent: bitsPerComponent,
+                                   bytesPerRow: bytesPerRow,
+                                   space: colorSpace,
+                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        
+        guard let newCGImage = newContext.makeImage() else { return image }
+        return UIImage(cgImage: newCGImage)
     }
     
     // 영역 마스크 생성 (Flood Fill 알고리즘 사용)
