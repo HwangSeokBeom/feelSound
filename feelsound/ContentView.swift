@@ -54,6 +54,11 @@ struct ContentView: View {
                     case .sampleView3:
                         FortuneCookieView()
                             .toolbar(.hidden)
+                        
+                    case .sampleView6:
+                        SlimeView(renderer: SlimeRenderer(config: SlimeConfig(textureName: "glitter_slime", elasticity: 0.06, damping: 0.9),
+                                                          device: MTLCreateSystemDefaultDevice()!))
+                            .toolbar(.hidden)
                     }
                 }
                 .navigationBarHidden(true)
