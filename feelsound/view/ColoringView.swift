@@ -92,19 +92,22 @@ struct ColoringView: View {
                 .padding(.bottom, 20)
                 .padding(.trailing, 20)
                 
+
                 VStack{
                     // 색칠할 이미지
+                    let screenWidth = UIScreen.main.bounds.width
+                    
                     if let floodFillImage = floodFillImage {
                         DrawableImageView(image: floodFillImage, onDraw: handleDraw, onDrawingStateChanged: handleDrawingStateChanged)
-                            .frame(maxWidth: .infinity)
-                            .aspectRatio(contentMode: .fit)
+                            .frame(width: screenWidth, height: screenWidth) // 화면 너비와 같은 정사각형
                             .background(Color.white)
+                            .clipped()
                     } else {
                         if let imageName = imageName, let image = UIImage(named: imageName) {
                             DrawableImageView(image: image, onDraw: handleDraw, onDrawingStateChanged: handleDrawingStateChanged)
-                                .frame(maxWidth: .infinity)
-                                .aspectRatio(contentMode: .fit)
+                                .frame(width: screenWidth, height: screenWidth) // 화면 너비와 같은 정사각형
                                 .background(Color.white)
+                                .clipped()
                                 .onAppear(perform: initializeImage)
                         } else {
                             Text("이미지를 찾을 수 없습니다")
