@@ -30,7 +30,6 @@ class ArcticFoxScene: SKScene {
         case normal     // 정면
         case left
         case right
-        case resting
     }
     
     // MARK: - Texture Groups
@@ -54,6 +53,8 @@ class ArcticFoxScene: SKScene {
         var turnLeftToFront: [SKTexture] = []
         var turnFrontToRight: [SKTexture] = []
         var turnFrontToLeft: [SKTexture] = []
+        var liftHead: [SKTexture] = []
+        var sniffing: [SKTexture] = []
     }
     
     private var textures = FoxTextures()
@@ -135,7 +136,7 @@ class ArcticFoxScene: SKScene {
         textures.front = loadSequence("앞쪽_움직임_", count: 8)
         textures.left = loadSequence("왼쪽_움직임_", count: 8)
         textures.right = loadSequence("오른쪽_움직임_", count: 8)
-        textures.rest = loadSequence("휴식_", count: 6)
+        textures.rest = loadSequence("휴식_", count: 16)
         textures.turnRightToFront = loadSequence("오른쪽으로_걷다가_정면_보기_", count: 6)
         textures.turnLeftToFront = loadSequence("왼쪽으로_걷다가_정면_보기_", count: 6)
         textures.turnFrontToRight = textures.turnRightToFront.reversed()
@@ -150,6 +151,8 @@ class ArcticFoxScene: SKScene {
         textures.blinkRight = loadSequence("오른쪽으로_걷다가_눈_깜빡이기_", count: 2)
         textures.blinkResting = loadSequence("휴식중_눈_깜빡이기_", count: 2)
         textures.jump = loadSequence("점프_", count: 6)
+        textures.liftHead = loadSequence("고개_들기_", count: 6)
+        textures.sniffing = loadSequence("냄새_맡기_", count: 6)
     }
     
     private func loadSequence(_ prefix: String, count: Int) -> [SKTexture] {
@@ -248,18 +251,22 @@ class ArcticFoxScene: SKScene {
                 // 🎲 랜덤 행동 결정
                 let rand = Double.random(in: 0...1)
                 switch rand {
-                case 0..<0.15:
-                    self.enterRestingState()              // 15%
-                case 0.15..<0.30:
-                    self.enterTailWaggingState()          // 15%
-                case 0.30..<0.45:
-                    self.enterSniffingState(for: .normal) // 15%
-                case 0.45..<0.60:
-                    self.enterBlinkingState(for: .normal) // 15%
-                case 0.60..<0.75:
-                    self.enterJumpingState()              // 15%
+                case 0..<0.10:
+                    self.enterRestingState()
+                case 0.10..<0.20:
+                    self.enterTailWaggingState()
+                case 0.20..<0.30:
+                    self.enterSniffingState(for: .normal)
+                case 0.30..<0.40:
+                    self.enterBlinkingState(for: .normal)
+                case 0.40..<0.50:
+                    self.enterJumpingState()
+                case 0.50..<0.60:
+                    self.enterHeadLiftingState()
+                case 0.60..<0.70:
+                    self.enterSniffingLoopState()
                 default:
-                    self.scheduleNextWalk()               // 나머지 25%
+                    self.scheduleNextWalk() // 👉 30% 확률로 그냥 걷기 계속
                 }
             }
 
@@ -333,7 +340,6 @@ class ArcticFoxScene: SKScene {
             switch state {
             case .left: return (textures.blinkLeft, "blinkLeft")
             case .right: return (textures.blinkRight, "blinkRight")
-            case .resting: return (textures.blinkResting, "blinkResting")
             case .normal: return (textures.blink, "blink")
             }
         }()
@@ -348,7 +354,6 @@ class ArcticFoxScene: SKScene {
             switch type {
             case .left: return (textures.sniffLeft, "sniffingLeft", textures.sniffLeft.first)
             case .right: return (textures.sniffRight, "sniffingRight", textures.sniffRight.first)
-            case .resting: return (textures.sniffWhileResting, "sniffWhileResting", textures.rest.first)
             case .normal: return (textures.sniff, "sniffing", textures.sniff.first)
             }
         }()
@@ -380,50 +385,44 @@ class ArcticFoxScene: SKScene {
         foxState = .resting(0)
         foxNode.removeAllActions()
 
-        let restIn = SKAction.animate(with: textures.rest, timePerFrame: 0.1)
-        let wait = SKAction.wait(forDuration: 0.5)
-        let restOut = SKAction.animate(with: textures.rest.reversed(), timePerFrame: 0.1)
-        let resetToFirst = SKAction.run { self.foxNode.texture = self.textures.rest.first }
-        let delay = SKAction.wait(forDuration: 3.0)
-
-        let decide = SKAction.run {
-            if .random(probability: 0.3) {
-                // 💡 rest → sniff 흐름 자연스럽게 이어주기
-                self.playRestingSniffTransition()
-            } else if .random(probability: 0.3) {
-                self.playRestingBlinkTransition()
-            } else {
-                self.scheduleNextWalk()
+        let restIn = SKAction.animate(with: textures.rest, timePerFrame: 0.02)
+        
+        let freezeLastFrame = SKAction.run {
+            if let last = self.textures.rest.last {
+                self.foxNode.texture = last
             }
         }
 
+        // 👁 눈 깜빡이기 or 👃 냄새 맡기 확률적 삽입
+        let maybeBlinkOrSniff = SKAction.run { [weak self] in
+            guard let self = self else { return }
+            
+            if .random(probability: 0.3) {
+                let blink = SKAction.animate(with: self.textures.blinkResting, timePerFrame: 0.2)
+                let blinkBack = SKAction.animate(with: self.textures.blinkResting.reversed(), timePerFrame: 0.2)
+                self.foxNode.run(.sequence([blink, blinkBack]), withKey: "blinkResting")
+            } else if .random(probability: 0.3) {
+                let sniff = SKAction.animate(with: self.textures.sniffWhileResting, timePerFrame: 0.25)
+                let sniffBack = SKAction.animate(with: self.textures.sniffWhileResting.reversed(), timePerFrame: 0.25)
+                self.foxNode.run(.sequence([sniff, sniffBack]), withKey: "sniffResting")
+            }
+        }
+
+        let holdLastRestFrame = SKAction.wait(forDuration: 5.0)
+        let restOut = SKAction.animate(with: textures.rest.reversed(), timePerFrame: 0.02)
+
+        let decide = SKAction.run {
+            self.scheduleNextWalk()
+        }
+
         foxNode.run(.sequence([
-            restIn, wait, restOut, resetToFirst, delay, decide
+            restIn,
+            freezeLastFrame,
+            maybeBlinkOrSniff,   // 👈 확률 기반 깜빡이기 or 킁킁
+            holdLastRestFrame,
+            restOut,
+            decide
         ]), withKey: "resting")
-    }
-    
-    private func playRestingSniffTransition() {
-        let restIn = SKAction.animate(with: textures.rest, timePerFrame: 0.1)
-        let sniff = SKAction.animate(with: textures.sniffWhileResting, timePerFrame: 0.25)
-        let sniffBack = SKAction.animate(with: textures.sniffWhileResting.reversed(), timePerFrame: 0.25)
-        let reset = SKAction.run { self.foxNode.texture = self.textures.rest.first }
-
-        let wait = SKAction.wait(forDuration: 1.0)
-        let done = SKAction.run { self.scheduleNextWalk() }
-
-        foxNode.run(.sequence([restIn, sniff, sniffBack, reset, wait, done]), withKey: "sniffWhileResting")
-    }
-
-    private func playRestingBlinkTransition() {
-        let restIn = SKAction.animate(with: textures.rest, timePerFrame: 0.1)
-        let blink = SKAction.animate(with: textures.blinkResting, timePerFrame: 0.25)
-        let blinkBack = SKAction.animate(with: textures.blinkResting.reversed(), timePerFrame: 0.25)
-        let reset = SKAction.run { self.foxNode.texture = self.textures.rest.first }
-
-        let wait = SKAction.wait(forDuration: 1.0)
-        let done = SKAction.run { self.scheduleNextWalk() }
-
-        foxNode.run(.sequence([restIn, blink, blinkBack, reset, wait, done]), withKey: "blinkResting")
     }
     
     private func enterJumpingState() {
@@ -455,6 +454,33 @@ class ArcticFoxScene: SKScene {
         foxNode.run(.sequence([group, reset, wait, next]), withKey: "jump")
     }
     
+    private func enterHeadLiftingState() {
+        foxState = .resting(3) // 식별용
+        foxNode.removeAllActions()
+
+        let lift = SKAction.animate(with: textures.liftHead, timePerFrame: 0.1)
+
+        let sequence = SKAction.sequence([
+            lift,
+            .run { self.scheduleNextWalk() }
+        ])
+        foxNode.run(sequence, withKey: "liftHead")
+    }
+    
+    private func enterSniffingLoopState() {
+        foxState = .resting(4) // 식별용
+        foxNode.removeAllActions()
+        
+        let sniff = SKAction.animate(with: textures.sniffing, timePerFrame: 0.12)
+        
+        let sequence = SKAction.sequence([
+            sniff,
+            .run { self.scheduleNextWalk() }
+        ])
+        
+        foxNode.run(sequence, withKey: "sniffingLoop")
+    }
+    
     private func scheduleNextWalk() {
         run(.sequence([
             .wait(forDuration: .random(in: 0.5...2.0)),
@@ -480,12 +506,22 @@ class ArcticFoxScene: SKScene {
         let y = foxNode.position.y
         let margin: CGFloat = foxNode.size.width / 2
         let distance: CGFloat = 100
+
+        let minY = size.height * 0.1 + margin
+        let maxY = size.height * 0.8 - margin
+
         var dirs: [Direction] = []
-        
-        if y + distance + margin <= size.height { dirs.append(.back) }
-        if y - distance - margin >= 0 { dirs.append(.front) }
+
+        // 위쪽으로 갈 수 있는지
+        if y + distance <= maxY { dirs.append(.back) }
+
+        // 아래쪽으로 갈 수 있는지
+        if y - distance >= minY { dirs.append(.front) }
+
+        // 좌우 제한은 기존 유지
         if x - distance - margin >= 0 { dirs.append(.left) }
         if x + distance + margin <= size.width { dirs.append(.right) }
+
         return dirs
     }
 }
