@@ -35,10 +35,9 @@ struct feelsoundApp: App {
         .environmentObject(router)
         .modelContainer(sharedModelContainer)
     }
-    
+
     init() {
         Font.registerFontsTTF(fontName: "Micro5-Regular")
-        
         Font.registerFonts(fontName: "Pretendard-Bold")
         Font.registerFonts(fontName: "Pretendard-Regular")
         Font.registerFonts(fontName: "Pretendard-SemiBold")
@@ -47,39 +46,45 @@ struct feelsoundApp: App {
         guard let regionCode = Locale.current.regionCode else { return }
         guard let languageCode = Locale.current.languageCode else { return }
         print("identifier: \(identifier), regionCode: \(regionCode), languageCode: \(languageCode)")
-        
-      }
+    }
 }
 
-
 class AppDelegate: NSObject, UIApplicationDelegate {
-    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
-
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback)
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            print(error)
+            print("AVAudioSession Error: \(error)")
         }
-        application.registerForRemoteNotifications()
 
+        // 로컬 알림에 필요한 설정
         UNUserNotificationCenter.current().delegate = self
-        
-        //audio controller
+        requestNotificationPermission()
+
         application.beginReceivingRemoteControlEvents()
-        
         return true
     }
-    
+
+    private func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error = error {
+                print("알림 권한 요청 실패: \(error.localizedDescription)")
+            } else {
+                print("알림 권한 granted: \(granted)")
+            }
+        }
+    }
 }
 
+// 포그라운드에서도 알림 표시되도록 설정
 extension AppDelegate: UNUserNotificationCenterDelegate {
-    
-    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
-        print("\(deviceToken)")
-    }
-    
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.badge, .sound, .banner])
+    // 포그라운드 알림 배너 출력
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler:
+                                @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound, .badge])
     }
 }

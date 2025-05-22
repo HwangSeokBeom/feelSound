@@ -1,5 +1,5 @@
 //
-//  Untitled.swift
+//  ReminderView.swift
 //  feelsound
 //
 //  Created by Hwangseokbeom on 5/20/25.
@@ -12,84 +12,85 @@ struct ReminderView: View {
     @Environment(\.presentationMode) var presentationMode
     @State private var isEnabled = true
     @State private var selectedTime = Date()
-    @State private var selectedDays: Set<Weekday> = Set(Weekday.allCases)
+    @State private var selectedDays: Set<Weekday> = Set()
+
+    private let reminderKey = "ReminderSetting"
 
     var body: some View {
         NavigationView {
             VStack(spacing: 24) {
-                // 알림 설정 토글
+                // 🔹 1. 항상 활성화되는 토글 영역
                 HStack {
                     Text("알림 설정")
                         .font(.title3)
                         .foregroundColor(.white)
 
                     Spacer()
-
                     ReminderToggle(isOn: $isEnabled)
                 }
                 .padding(.horizontal)
 
-                VStack(spacing: 36) {
-                    Text("몇 시에 알람을 드릴까요?")
-                        .font(.title2)
-                        .foregroundColor(.white)
+                // 🔹 2. 비활성화 대상인 나머지 설정 UI만 별도로 감쌈
+                Group {
+                    VStack(spacing: 36) {
+                        Text("몇 시에 알람을 드릴까요?")
+                            .font(.title2)
+                            .foregroundColor(.white)
 
-                    Text("매일 연습 시간을 알려드릴게요.")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                }
-                .padding(.top, 32)
+                        Text("매일 연습 시간을 알려드릴게요.")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                    .padding(.top, 32)
 
-                // 요일 선택
-                HStack(spacing: 14) {
-                    ForEach(Weekday.allCases) { day in
-                        VStack(spacing: 4) {
-                            ZStack {
-                                Circle()
-                                    .stroke(Color.white.opacity(selectedDays.contains(day) ? 0 : 0.6), lineWidth: 1)
-
-                                if selectedDays.contains(day) {
+                    HStack(spacing: 14) {
+                        ForEach(Weekday.allCases) { day in
+                            VStack(spacing: 4) {
+                                ZStack {
                                     Circle()
-                                        .stroke(Color.yellow.opacity(0.7), lineWidth: 1.5)
+                                        .stroke(Color.white.opacity(selectedDays.contains(day) ? 0 : 0.6), lineWidth: 1)
 
-                                    // Glow 효과
-                                    Circle()
-                                        .stroke(Color.yellow.opacity(0.4), lineWidth: 4)
-                                        .blur(radius: 3)
+                                    if selectedDays.contains(day) {
+                                        Circle()
+                                            .stroke(Color.yellow.opacity(0.7), lineWidth: 1.5)
+                                        Circle()
+                                            .stroke(Color.yellow.opacity(0.4), lineWidth: 4)
+                                            .blur(radius: 3)
+                                    }
+
+                                    Text(day.label)
+                                        .font(.body)
+                                        .foregroundColor(.white)
                                 }
+                                .frame(width: 40, height: 40)
 
-                                Text(day.label)
-                                    .font(.body)
-                                    .foregroundColor(.white)
+                                Rectangle()
+                                    .fill(Color.yellow.opacity(selectedDays.contains(day) ? 0.4 : 0))
+                                    .frame(height: 2)
+                                    .frame(width: 16)
                             }
-                            .frame(width: 40, height: 40)
-
-                            // 밑줄 (더 연하고 더 길게)
-                            Rectangle()
-                                .fill(Color.yellow.opacity(selectedDays.contains(day) ? 0.4 : 0))
-                                .frame(height: 2)
-                                .frame(width: 16)
-                        }
-                        .onTapGesture {
-                            if selectedDays.contains(day) {
-                                selectedDays.remove(day)
-                            } else {
-                                selectedDays.insert(day)
+                            .onTapGesture {
+                                if selectedDays.contains(day) {
+                                    selectedDays.remove(day)
+                                } else {
+                                    selectedDays.insert(day)
+                                }
                             }
                         }
                     }
-                }
-                .padding(.top, 8)
-                .padding(.bottom, 24)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
 
-                // 시간 선택 - AM/PM 포함 휠
-                DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
-                    .datePickerStyle(WheelDatePickerStyle())
-                    .labelsHidden()
-                    .frame(height: 250) // 기본 높이보다 크게
-                    .scaleEffect(x: 1.2, y: 1.2, anchor: .center) // 확대
-                    .clipped() // 확대 영역 잘림 방지
-                    .colorMultiply(.white)
+                    DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
+                        .datePickerStyle(WheelDatePickerStyle())
+                        .labelsHidden()
+                        .frame(height: 250)
+                        .scaleEffect(x: 1.2, y: 1.2, anchor: .center)
+                        .clipped()
+                        .colorMultiply(.white)
+                }
+                .opacity(isEnabled ? 1.0 : 0.3)
+                .allowsHitTesting(isEnabled)
 
                 Spacer()
             }
@@ -98,20 +99,37 @@ struct ReminderView: View {
             .navigationBarTitle("Reminder", displayMode: .inline)
             .navigationBarItems(
                 leading: Button(action: {
+                    if isEnabled {
+                        saveReminderSetting()
+                        scheduleNotifications()
+                    } else {
+                        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+                        saveReminderSetting()
+                    }
                     presentationMode.wrappedValue.dismiss()
                 }) {
                     Image(systemName: "chevron.left")
                         .foregroundColor(.white)
-                },
-                trailing: Button("Save") {
-                    scheduleNotifications()
-                    presentationMode.wrappedValue.dismiss()
                 }
-                .foregroundColor(.blue)
             )
         }
         .onAppear {
             requestNotificationPermission()
+            loadReminderSetting()
+        }
+        .onChange(of: isEnabled) {
+            saveReminderSetting()
+            if isEnabled {
+                scheduleNotifications()
+            } else {
+                UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+            }
+        }
+        .onChange(of: selectedTime) {
+            saveReminderSetting()
+        }
+        .onChange(of: selectedDays) {
+            saveReminderSetting()
         }
     }
 
@@ -129,6 +147,8 @@ struct ReminderView: View {
 
         guard isEnabled else { return }
 
+        saveReminderSetting()
+
         for day in selectedDays {
             var dateComponents = Calendar.current.dateComponents([.hour, .minute], from: selectedTime)
             dateComponents.weekday = day.calendarWeekday
@@ -143,6 +163,28 @@ struct ReminderView: View {
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
             UNUserNotificationCenter.current().add(request)
         }
+    }
+
+    // MARK: - 저장 및 복원
+    func saveReminderSetting() {
+        let setting = ReminderSetting(
+            isEnabled: isEnabled,
+            selectedTime: selectedTime,
+            selectedDays: selectedDays.map { $0.rawValue }
+        )
+        if let data = try? JSONEncoder().encode(setting) {
+            UserDefaults.standard.set(data, forKey: reminderKey)
+        }
+    }
+
+    func loadReminderSetting() {
+        guard let data = UserDefaults.standard.data(forKey: reminderKey),
+              let setting = try? JSONDecoder().decode(ReminderSetting.self, from: data) else {
+            return
+        }
+        isEnabled = setting.isEnabled
+        selectedTime = setting.selectedTime
+        selectedDays = Set(setting.selectedDays.compactMap { Weekday(rawValue: $0) })
     }
 
     enum Weekday: String, CaseIterable, Identifiable {
@@ -176,6 +218,12 @@ struct ReminderView: View {
     }
 }
 
+struct ReminderSetting: Codable {
+    let isEnabled: Bool
+    let selectedTime: Date
+    let selectedDays: [String]
+}
+
 struct ReminderToggle: View {
     @Binding var isOn: Bool
 
@@ -183,6 +231,7 @@ struct ReminderToggle: View {
     private let toggleHeight: CGFloat = 36
     private let knobSize: CGFloat = 24
     private let knobPadding: CGFloat = 4
+
     var body: some View {
         Button(action: {
             withAnimation(.easeInOut(duration: 0.2)) {
@@ -190,16 +239,12 @@ struct ReminderToggle: View {
             }
         }) {
             ZStack {
-                // 배경
                 RoundedRectangle(cornerRadius: toggleHeight / 2)
                     .fill(
                         isOn
                         ? AnyShapeStyle(
                             LinearGradient(
-                                gradient: Gradient(colors: [
-                                    Color.blue,               // 파란색
-                                    Color.purple.opacity(0.6) // 자연스러운 끝단 보라색
-                                ]),
+                                gradient: Gradient(colors: [Color.blue, Color.purple.opacity(0.6)]),
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -208,7 +253,6 @@ struct ReminderToggle: View {
                     )
                     .frame(width: toggleWidth, height: toggleHeight)
 
-                // 텍스트 (슬라이더 영역 제외한 가운데)
                 HStack(spacing: 0) {
                     if isOn {
                         Text("ON")
@@ -216,7 +260,6 @@ struct ReminderToggle: View {
                             .foregroundColor(.white)
                             .font(.caption)
                             .fontWeight(.semibold)
-                            .multilineTextAlignment(.center)
                         Spacer().frame(width: knobSize + knobPadding * 2)
                     } else {
                         Spacer().frame(width: knobSize + knobPadding * 2)
@@ -225,11 +268,9 @@ struct ReminderToggle: View {
                             .foregroundColor(.white)
                             .font(.caption)
                             .fontWeight(.semibold)
-                            .multilineTextAlignment(.center)
                     }
                 }
 
-                // 슬라이더
                 HStack {
                     if isOn { Spacer() }
                     Circle()
@@ -242,12 +283,5 @@ struct ReminderToggle: View {
             }
         }
         .buttonStyle(.plain)
-    }
-}
-
-extension Date {
-    var isAM: Bool {
-        let hour = Calendar.current.component(.hour, from: self)
-        return hour < 12
     }
 }
