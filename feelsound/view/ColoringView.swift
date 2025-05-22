@@ -21,6 +21,12 @@ struct ColoringView: View {
     private let expandedPaletteHeight: CGFloat = 200 // 펼친 상태 높이
     
     @State private var previousDrawPoint: CGPoint? = nil
+    
+    // 확대/축소 상태 변수
+    @State private var scale: CGFloat = 1.0
+    @State private var lastScale: CGFloat = 1.0
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
 
     let imageName: String?
     
@@ -98,17 +104,29 @@ struct ColoringView: View {
                     let screenWidth = UIScreen.main.bounds.width
                     
                     if let floodFillImage = floodFillImage {
-                        DrawableImageView(image: floodFillImage, onDraw: handleDraw, onDrawingStateChanged: handleDrawingStateChanged)
-                            .frame(width: screenWidth, height: screenWidth) // 화면 너비와 같은 정사각형
-                            .background(Color.white)
-                            .clipped()
+                        ZoomableImageView(
+                            image: floodFillImage,
+                            onDraw: handleDraw,
+                            onDrawingStateChanged: handleDrawingStateChanged,
+                            scale: $scale,
+                            offset: $offset
+                        )
+                        .frame(width: screenWidth, height: screenWidth)
+                        .background(Color.white)
+                        .clipped()
                     } else {
                         if let imageName = imageName, let image = UIImage(named: imageName) {
-                            DrawableImageView(image: image, onDraw: handleDraw, onDrawingStateChanged: handleDrawingStateChanged)
-                                .frame(width: screenWidth, height: screenWidth) // 화면 너비와 같은 정사각형
-                                .background(Color.white)
-                                .clipped()
-                                .onAppear(perform: initializeImage)
+                            ZoomableImageView(
+                                image: image,
+                                onDraw: handleDraw,
+                                onDrawingStateChanged: handleDrawingStateChanged,
+                                scale: $scale,
+                                offset: $offset
+                            )
+                            .frame(width: screenWidth, height: screenWidth)
+                            .background(Color.white)
+                            .clipped()
+                            .onAppear(perform: initializeImage)
                         } else {
                             Text("이미지를 찾을 수 없습니다")
                                 .foregroundColor(.red)
@@ -221,64 +239,108 @@ struct ColoringView: View {
     }
     
     // 드로잉을 위한 UIView
-    struct DrawableImageView: UIViewRepresentable {
+    // 2. DrawableImageView를 ZoomableImageView로 교체
+    struct ZoomableImageView: UIViewRepresentable {
         var image: UIImage
         var onDraw: (CGPoint) -> Void
         var onDrawingStateChanged: (Bool) -> Void
+        @Binding var scale: CGFloat
+        @Binding var offset: CGSize
         
-        func makeUIView(context: Context) -> UIImageView {
+        func makeUIView(context: Context) -> UIScrollView {
+            let scrollView = UIScrollView()
             let imageView = UIImageView(image: image)
+            
+            // ScrollView 설정
+            scrollView.delegate = context.coordinator
+            scrollView.minimumZoomScale = 1.0
+            scrollView.maximumZoomScale = 5.0
+            scrollView.zoomScale = scale
+            scrollView.contentOffset = CGPoint(x: offset.width, y: offset.height)
+            scrollView.showsVerticalScrollIndicator = false
+            scrollView.showsHorizontalScrollIndicator = false
+            
+            // ImageView 설정
             imageView.contentMode = .scaleAspectFit
             imageView.isUserInteractionEnabled = true
             
-            // 드래그 제스처 추가
+            // 제스처 추가
             let panGesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
+            panGesture.delegate = context.coordinator
             imageView.addGestureRecognizer(panGesture)
             
-            return imageView
+            scrollView.addSubview(imageView)
+            
+            // Auto Layout 설정
+            imageView.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                imageView.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
+                imageView.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
+                imageView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+                imageView.heightAnchor.constraint(equalTo: scrollView.heightAnchor)
+            ])
+            
+            return scrollView
         }
         
-        func updateUIView(_ uiView: UIImageView, context: Context) {
-            uiView.image = image
+        func updateUIView(_ uiView: UIScrollView, context: Context) {
+            if let imageView = uiView.subviews.first as? UIImageView {
+                imageView.image = image
+            }
+            uiView.zoomScale = scale
+            uiView.contentOffset = CGPoint(x: offset.width, y: offset.height)
         }
         
         func makeCoordinator() -> Coordinator {
             Coordinator(self)
         }
         
-        class Coordinator: NSObject {
-            var parent: DrawableImageView
-            var lastPoint: CGPoint? // 이전 포인트 저장
+        class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
+            var parent: ZoomableImageView
+            var lastPoint: CGPoint?
             
-            init(_ parent: DrawableImageView) {
+            init(_ parent: ZoomableImageView) {
                 self.parent = parent
             }
             
+            // UIScrollViewDelegate
+            func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+                return scrollView.subviews.first
+            }
+            
+            func scrollViewDidZoom(_ scrollView: UIScrollView) {
+                parent.scale = scrollView.zoomScale
+            }
+            
+            func scrollViewDidScroll(_ scrollView: UIScrollView) {
+                parent.offset = CGSize(width: scrollView.contentOffset.x, height: scrollView.contentOffset.y)
+            }
+            
+            // UIGestureRecognizerDelegate
+            func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+                return false // 드로잉 제스처와 스크롤 제스처가 동시에 인식되지 않도록
+            }
+            
             @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
-                let location = gesture.location(in: gesture.view)
-                
-                guard let imageView = gesture.view as? UIImageView,
+                guard let scrollView = gesture.view?.superview as? UIScrollView,
+                      let imageView = gesture.view as? UIImageView,
                       let image = imageView.image else { return }
                 
-                // 이미지뷰의 실제 이미지 프레임 계산 - 더 정확한 계산
+                let location = gesture.location(in: imageView)
+                
+                // 이미지뷰의 실제 이미지 프레임 계산
                 let viewSize = imageView.bounds.size
                 let imageSize = image.size
                 
-                // 이미지가 실제로 그려지는 영역과 스케일 계산
                 var imageFrame = CGRect.zero
-                var scale: CGFloat = 1.0
                 
                 if imageSize.width / imageSize.height > viewSize.width / viewSize.height {
-                    // 너비에 맞춰진 경우
-                    scale = viewSize.width / imageSize.width
                     let scaledHeight = viewSize.width * (imageSize.height / imageSize.width)
                     imageFrame = CGRect(x: 0,
                                       y: (viewSize.height - scaledHeight) / 2,
                                       width: viewSize.width,
                                       height: scaledHeight)
                 } else {
-                    // 높이에 맞춰진 경우
-                    scale = viewSize.height / imageSize.height
                     let scaledWidth = viewSize.height * (imageSize.width / imageSize.height)
                     imageFrame = CGRect(x: (viewSize.width - scaledWidth) / 2,
                                       y: 0,
@@ -289,11 +351,10 @@ struct ColoringView: View {
                 // 터치 위치가 이미지 영역 안에 있는지 확인
                 guard imageFrame.contains(location) else { return }
                 
-                // 이미지 내에서의 정규화된 좌표 계산 (0~1 범위)
+                // 줌 스케일을 고려한 실제 이미지 좌표 계산
                 let normalizedX = (location.x - imageFrame.origin.x) / imageFrame.width
                 let normalizedY = (location.y - imageFrame.origin.y) / imageFrame.height
                 
-                // 정규화된 좌표를 원본 이미지 픽셀 좌표로 변환
                 let pixelX = normalizedX * imageSize.width
                 let pixelY = normalizedY * imageSize.height
                 
@@ -315,14 +376,11 @@ struct ColoringView: View {
                 }
             }
             
-            // 두 점 사이를 매우 촘촘하게 보간하는 함수
             private func interpolatePoints(from startPoint: CGPoint, to endPoint: CGPoint) {
                 let distance = hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y)
+                let numberOfPoints = max(Int(distance), 10)
                 
-                // 더 많은 점을 생성하도록 수정
-                let numberOfPoints = max(Int(distance), 10) // 최소 10개 점으로 증가
-                
-                if numberOfPoints < 2 { // 거리가 너무 짧으면 중간점 생성 안함
+                if numberOfPoints < 2 {
                     parent.onDraw(endPoint)
                     return
                 }
@@ -718,6 +776,6 @@ extension View {
 
 struct ColoringView_Previews: PreviewProvider {
     static var previews: some View {
-        ColoringView(imageName: "panda")
+        ColoringView(imageName: "paint")
     }
 }
