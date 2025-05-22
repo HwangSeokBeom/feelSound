@@ -56,7 +56,7 @@ struct ContentView: View {
                             .toolbar(.hidden)
                         
                     case .coloring:
-                        ColoringView()
+                        DrawingListView()
                             .toolbar(.hidden)
                     }
                     

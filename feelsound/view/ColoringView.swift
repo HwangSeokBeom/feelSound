@@ -22,7 +22,7 @@ struct ColoringView: View {
     
     @State private var previousDrawPoint: CGPoint? = nil
 
-
+    let imageName: String?
     
     // 사용 가능한 색상 팔레트
     let colors: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .pink]
@@ -88,7 +88,9 @@ struct ColoringView: View {
                             .foregroundColor(.white)
                     })
                 }
-                .padding(20)
+                .padding(.leading, 20)
+                .padding(.bottom, 20)
+                .padding(.trailing, 20)
                 
                 VStack{
                     // 색칠할 이미지
@@ -98,7 +100,7 @@ struct ColoringView: View {
                             .aspectRatio(contentMode: .fit)
                             .background(Color.white)
                     } else {
-                        if let image = UIImage(named: "panda") {
+                        if let imageName = imageName, let image = UIImage(named: imageName) {
                             DrawableImageView(image: image, onDraw: handleDraw, onDrawingStateChanged: handleDrawingStateChanged)
                                 .frame(maxWidth: .infinity)
                                 .aspectRatio(contentMode: .fit)
@@ -205,11 +207,13 @@ struct ColoringView: View {
             // 초기 상태에서 모달의 헤더 부분만 표시
             paletteHeight = collapsedPaletteHeight
         }
+        .navigationBarHidden(true) // 기본 네비게이션 바 숨김
+
     }
     
     // 이미지 초기화
     func initializeImage() {
-        guard let originalImage = UIImage(named: "panda") else { return }
+        guard let imageName = imageName, let originalImage = UIImage(named: imageName) else { return }
         floodFillImage = originalImage
     }
     
@@ -539,15 +543,12 @@ struct ColoringView: View {
         // 검은색 선인지 확인 (RGB 값이 모두 낮으면 검은색으로 간주)
         let isBlackLine = startRed < 30 && startGreen < 30 && startBlue < 30
         if isBlackLine {
-            print("검은 선 위를 선택했습니다. 마스크 생성 안함")
             return (mask, image)
         }
         
         // 플러드 필 알고리즘으로 영역 마스크 생성
         var queue = [(startX, startY)]
         var visited = Set<String>()
-        
-        print("영역 마스크 생성: 위치 (\(startX), \(startY)), 색상 RGB(\(startRed), \(startGreen), \(startBlue))")
         
         while !queue.isEmpty {
             let (x, y) = queue.removeFirst()
@@ -712,8 +713,8 @@ extension View {
     }
 }
 
-struct ContentView_Previews: PreviewProvider {
+struct ColoringView_Previews: PreviewProvider {
     static var previews: some View {
-        ColoringView()
+        ColoringView(imageName: "panda")
     }
 }
