@@ -23,6 +23,13 @@ struct SlimeTouch {
     var previousPosition: SIMD2<Float>?
 }
 
+struct DeformationParams {
+    var waveFreq: Float
+    var waveSpeed: Float
+    var intensity: Float
+    var shapeType: Int32
+}
+
 class SlimeRenderer: NSObject, MTKViewDelegate {
     private let config: SlimeConfig
     private let soundPlayer: SlimeSoundPlayer
@@ -42,8 +49,8 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
     var viewSize: CGSize = .zero
     var time: Float = 0
 
-    private let cols = 40
-    private let rows = 40
+    private let cols = 60
+    private let rows = 60
 
     init(type: SlimeType) {
         self.config = type.config
@@ -52,7 +59,7 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
 
         guard let device = MTLCreateSystemDefaultDevice(),
               let commandQueue = device.makeCommandQueue() else {
-            fatalError("❌ Metal 초기화 실패")
+            fatalError("❌ Metal initialization failed")
         }
         self.device = device
         self.commandQueue = commandQueue
@@ -75,6 +82,13 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
         pipelineDescriptor.fragmentFunction = fragmentFunc
         pipelineDescriptor.vertexDescriptor = vertexDescriptor
         pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        pipelineDescriptor.colorAttachments[0].isBlendingEnabled = true
+        pipelineDescriptor.colorAttachments[0].rgbBlendOperation = .add
+        pipelineDescriptor.colorAttachments[0].alphaBlendOperation = .add
+        pipelineDescriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        pipelineDescriptor.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+        pipelineDescriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        pipelineDescriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
 
         self.pipelineState = try! device.makeRenderPipelineState(descriptor: pipelineDescriptor)
 
@@ -84,138 +98,108 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
 
     func loadTexture(named name: String) {
         let loader = MTKTextureLoader(device: device)
-
-        do {
-            texture = try loader.newTexture(name: name, scaleFactor: 1.0, bundle: nil, options: [
-                MTKTextureLoader.Option.origin: MTKTextureLoader.Origin.bottomLeft
-            ])
-        } catch {
-            fatalError("❌ '\(name)' 텍스처 로딩 실패: \(error.localizedDescription)")
-        }
+        let options: [MTKTextureLoader.Option: Any] = [
+            .textureUsage: MTLTextureUsage.shaderRead.rawValue,
+            .generateMipmaps: true,
+            .SRGB: false,
+            .origin: MTKTextureLoader.Origin.bottomLeft
+        ]
+        texture = try! loader.newTexture(name: name, scaleFactor: 1.0, bundle: nil, options: options)
     }
 
     func setupSampler() {
-        let samplerDescriptor = MTLSamplerDescriptor()
-        samplerDescriptor.minFilter = .linear
-        samplerDescriptor.magFilter = .linear
-        samplerState = device.makeSamplerState(descriptor: samplerDescriptor)
+        let desc = MTLSamplerDescriptor()
+        desc.minFilter = .linear
+        desc.magFilter = .linear
+        desc.mipFilter = .linear
+        desc.rAddressMode = .clampToEdge
+        desc.sAddressMode = .clampToEdge
+        desc.tAddressMode = .clampToEdge
+        samplerState = device.makeSamplerState(descriptor: desc)
     }
 
     func buildGrid() {
         vertices.removeAll()
         indices.removeAll()
-
-        let padding: Float = 0.1 // 👈 화면보다 5% 크게
-
+        let padding: Float = 0.15
         for row in 0..<rows {
             for col in 0..<cols {
                 let x = Float(col) / Float(cols - 1)
                 let y = Float(row) / Float(rows - 1)
-                
-                // 👇 padding을 곱해 위치를 살짝 확장
-                let pos = SIMD2<Float>(
-                    (x * 2 - 1) * (1 + padding),
-                    (y * 2 - 1) * (1 + padding)
-                )
+                let pos = SIMD2<Float>((x * 2 - 1) * (1 + padding), (y * 2 - 1) * (1 + padding))
                 let uv = SIMD2<Float>(x, y)
                 vertices.append(SlimeVertex(position: pos, uv: uv, original: pos))
             }
         }
-
         for row in 0..<(rows - 1) {
             for col in 0..<(cols - 1) {
-                let topLeft = UInt16(row * cols + col)
-                let topRight = UInt16(row * cols + col + 1)
-                let bottomLeft = UInt16((row + 1) * cols + col)
-                let bottomRight = UInt16((row + 1) * cols + col + 1)
-                indices.append(contentsOf: [topLeft, bottomLeft, topRight])
-                indices.append(contentsOf: [topRight, bottomLeft, bottomRight])
+                let i = UInt16(row * cols + col)
+                let r = UInt16(row * cols + col + 1)
+                let d = UInt16((row + 1) * cols + col)
+                let rd = UInt16((row + 1) * cols + col + 1)
+                indices += [i, d, r, r, d, rd]
             }
         }
-
-        vertexBuffer = device.makeBuffer(
-            bytes: vertices,
-            length: MemoryLayout<SlimeVertex>.stride * vertices.count,
-            options: []
-        )
-        indexBuffer = device.makeBuffer(
-            bytes: indices,
-            length: MemoryLayout<UInt16>.stride * indices.count,
-            options: []
-        )
-    }
-
-    func handleTouches(_ touches: Set<UITouch>, in view: UIView) {
-        let now = CACurrentMediaTime()
-        var updated: [ObjectIdentifier: SlimeTouch] = [:]
-        var existing = Dictionary(uniqueKeysWithValues: touchInputs.map { ($0.id, $0) })
-
-        for touch in touches {
-            let id = ObjectIdentifier(touch)
-            let loc = touch.location(in: view)
-            let x = (Float(loc.x) / Float(view.bounds.width)) * 2.0 - 1.0
-            let y = (1.0 - Float(loc.y) / Float(view.bounds.height)) * 2.0 - 1.0
-            let pos = SIMD2<Float>(x, y)
-
-            let rawForce = touch.force
-            let maxForce = touch.maximumPossibleForce
-            let force = (maxForce > 0) ? Float(rawForce / maxForce) : 1.0
-
-            if pos.x.isFinite && pos.y.isFinite {
-                let previous = existing[id]?.position
-                updated[id] = SlimeTouch(id: id, position: pos, force: force, previousPosition: previous)
-                if touchStartTimes[id] == nil {
-                    touchStartTimes[id] = now
-                }
-            }
-        }
-
-        touchInputs = Array(updated.values)
+        vertexBuffer = device.makeBuffer(bytes: vertices, length: MemoryLayout<SlimeVertex>.stride * vertices.count, options: [])
+        indexBuffer = device.makeBuffer(bytes: indices, length: MemoryLayout<UInt16>.stride * indices.count, options: [])
     }
 
     func updateVertices() {
         let now = CACurrentMediaTime()
 
+        // 튜닝 파라미터
+        let restoreRate: Float = 0.18
+        let pullLimit: Float = 0.014
+        let falloffPower: Float = 2.5
+        let minForce: Float = 0.2
+        let waveSpeed: Float = 3.5           // 눌렀을 때 퍼지는 파동 속도
+        let waveStrength: Float = 0.008      // 여운 파동 강도
+        let pulseStrength: Float = 0.012     // 순간 움찔 효과 강도
+
         for i in 0..<vertices.count {
             var v = vertices[i]
-            let delta = v.original - v.position
-            v.velocity += delta * config.elasticity
 
+            // 1. 기본 복원
+            v.position = mix(v.position, v.original, t: SIMD2(repeating: restoreRate))
+
+            // 2. 터치 기반 변형
             for touch in touchInputs {
                 let dist = simd_distance(v.position, touch.position)
+                if dist > 0.8 { continue }
+
+                let force = max(touch.force, minForce)
                 let duration = Float(now - (touchStartTimes[touch.id] ?? now))
-                let boost = min(duration, 2.0) / 2.0
-                let radius = 0.25 + 0.15 * boost
 
-                if dist < radius + 0.1 {
-                    let pull = (radius + 0.1 - dist) * (0.04 + 0.08 * touch.force)
-                    v.velocity += simd_normalize(v.position - touch.position) * pull
+                // (1) 기본 끌림 방향
+                let dragDir: SIMD2<Float>
+                if let prev = touch.previousPosition {
+                    let drag = touch.position - prev
+                    dragDir = simd_normalize(drag)
+                } else {
+                    dragDir = simd_normalize(v.position - touch.position)
                 }
 
-                if dist < radius {
-                    let pressure = (radius - dist) * touch.force * 0.2
-                    v.position += simd_normalize(touch.position - v.position) * pressure * boost
+                // (2) falloff 적용
+                let falloff = exp(-pow(dist / 0.3, falloffPower))
+                let boost = min(duration * 0.5, 0.8)
+                let pullOffset = dragDir * pullLimit * falloff * boost * sqrt(force)
+                v.position += pullOffset
 
-                    if simd_length(v.original - v.position) > 0.05 && i % 50 == 0 {
-                        if duration < 0.08 {
-                            soundPlayer.play(type: .tap)
-                        } else if let prev = touch.previousPosition {
-                            let move = simd_length(touch.position - prev)
-                            let velocity = min(move * 15.0, 1.0)
-                            if velocity > 0.15 {
-                                soundPlayer.play(type: .drag, velocity: velocity)
-                            } else {
-                                soundPlayer.play(type: .press, duration: duration)
-                            }
-                        } else {
-                            soundPlayer.play(type: .press, duration: duration)
-                        }
-                    }
+                // (3) 눌렀을 때 움찔 효과 (반대 방향 push)
+                if duration < 0.15 {
+                    let repelDir = simd_normalize(v.position - touch.position)
+                    let pulseFalloff = exp(-pow(dist / 0.4, 2.2))
+                    let pulseOffset = repelDir * pulseStrength * pulseFalloff * force
+                    v.position += pulseOffset
                 }
+
+                // (4) 퍼지는 wave (여운)
+                let wavePhase = sin(dist * 10.0 - duration * waveSpeed)
+                let waveFalloff = exp(-pow(dist / 0.35, 2.5))
+                let waveOffset = simd_normalize(v.original - touch.position) * waveStrength * wavePhase * waveFalloff * force
+                v.position += waveOffset
             }
 
-            v.velocity *= config.damping
-            v.position += v.velocity
             vertices[i] = v
         }
 
@@ -234,10 +218,9 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
             let input = touchInputs[i]
             touchData[i] = SIMD3<Float>(input.position.x, input.position.y, input.force)
         }
-
-        var maxTouches = 5
+        var maxTouches = min(touchInputs.count, 5)
         var currentTime = time
-        var deform = config.deformation.toMetalStruct() // ✅ deform 생성
+        var deform = config.deformation.toMetalStruct()
 
         let commandBuffer = commandQueue.makeCommandBuffer()!
         let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)!
@@ -248,7 +231,7 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
         encoder.setFragmentBytes(&currentTime, length: MemoryLayout<Float>.stride, index: 1)
         encoder.setFragmentBytes(&touchData, length: MemoryLayout<SIMD3<Float>>.stride * 5, index: 2)
         encoder.setFragmentBytes(&maxTouches, length: MemoryLayout<Int>.stride, index: 3)
-        encoder.setFragmentBytes(&deform, length: MemoryLayout<DeformationParams>.stride, index: 4) // ✅ 여기에 추가
+        encoder.setFragmentBytes(&deform, length: MemoryLayout<DeformationParams>.stride, index: 4)
         encoder.drawIndexedPrimitives(type: .triangle, indexCount: indices.count, indexType: .uint16, indexBuffer: indexBuffer, indexBufferOffset: 0)
         encoder.endEncoding()
         commandBuffer.present(drawable)
@@ -258,5 +241,31 @@ class SlimeRenderer: NSObject, MTKViewDelegate {
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         viewSize = size
         buildGrid()
+    }
+
+    func handleTouches(_ touches: Set<UITouch>, in view: UIView) {
+        let now = CACurrentMediaTime()
+        var updated: [ObjectIdentifier: SlimeTouch] = [:]
+        var existing = Dictionary(uniqueKeysWithValues: touchInputs.map { ($0.id, $0) })
+        for touch in touches {
+            let id = ObjectIdentifier(touch)
+            let loc = touch.location(in: view)
+            let x = (Float(loc.x) / Float(view.bounds.width)) * 2.0 - 1.0
+            let y = (1.0 - Float(loc.y) / Float(view.bounds.height)) * 2.0 - 1.0
+            let pos = SIMD2<Float>(x, y)
+            let rawForce = touch.force
+            let maxForce = touch.maximumPossibleForce
+            let normalizedForce = (maxForce > 0) ? Float(rawForce / maxForce) : 1.0
+            let force = powf(normalizedForce, 0.8) * 1.2
+            if pos.x.isFinite && pos.y.isFinite {
+                let previous = existing[id]?.position
+                updated[id] = SlimeTouch(id: id, position: pos, force: force, previousPosition: previous)
+                if touchStartTimes[id] == nil {
+                    touchStartTimes[id] = now
+                    soundPlayer.play(type: .tap)
+                }
+            }
+        }
+        touchInputs = Array(updated.values)
     }
 }
