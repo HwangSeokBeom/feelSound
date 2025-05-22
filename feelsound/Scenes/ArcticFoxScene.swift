@@ -426,6 +426,7 @@ class ArcticFoxScene: SKScene {
     }
     
     private func enterJumpingState() {
+        foxNode.removeAllActions()
         foxState = .resting(2)
         foxNode.removeAllActions()
 
@@ -512,13 +513,8 @@ class ArcticFoxScene: SKScene {
 
         var dirs: [Direction] = []
 
-        // 위쪽으로 갈 수 있는지
         if y + distance <= maxY { dirs.append(.back) }
-
-        // 아래쪽으로 갈 수 있는지
         if y - distance >= minY { dirs.append(.front) }
-
-        // 좌우 제한은 기존 유지
         if x - distance - margin >= 0 { dirs.append(.left) }
         if x + distance + margin <= size.width { dirs.append(.right) }
 
