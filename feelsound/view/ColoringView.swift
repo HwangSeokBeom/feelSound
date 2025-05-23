@@ -9,482 +9,465 @@ import SwiftUI
 
 struct ColoringView: View {
     @Environment(\.dismiss) private var dismiss
-
+    
+    // MARK: - State Properties
     @State private var floodFillImage: UIImage?
     @State private var selectedColor: Color = .red
     @State private var showingColorPicker = false
+    @State private var currentAreaMask: [[Bool]]?
+    @State private var showColorPalette = false
+    @State private var previousDrawPoint: CGPoint?
+    @State private var isProcessing = false
     @State private var isDrawing = false
-    @State private var currentAreaMask: [[Bool]]? = nil // 현재 영역을 추적하는 마스크
-    @State private var showColorPalette = false // 컬러 팔레트 모달을 제어하는 상태
-    @State private var paletteHeight: CGFloat = 50 // 기본 모달 높이
-    private let collapsedPaletteHeight: CGFloat = 80 // 접힌 상태 높이
-    private let expandedPaletteHeight: CGFloat = 200 // 펼친 상태 높이
     
-    @State private var previousDrawPoint: CGPoint? = nil
-    
-    // 확대/축소 상태 변수
+    // MARK: - Zoom Properties
     @State private var scale: CGFloat = 1.0
-    @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
-    @State private var lastOffset: CGSize = .zero
-
-    let imageName: String?
     
-    // 사용 가능한 색상 팔레트
-    let colors: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .pink]
+    // MARK: - Constants
+    private let collapsedPaletteHeight: CGFloat = 80
+    private let expandedPaletteHeight: CGFloat = 200
+    private let colors: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .pink]
+    
+    let imageName: String?
     
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
-                HStack {
-                    Button(action: {
-                        dismiss()
-                    }, label: {
-                        Image(systemName: "xmark")
-                            .resizable()
-                            .frame(width:20, height:20)
-                            .foregroundColor(.white)
-                    })
-                    
-                    Spacer()
-                    
-                    HStack(spacing: 20) {
-                        Button(action: {
-                            
-                        }, label: {
-                            VStack {
-                                Image(systemName: "arrowshape.turn.up.left.fill")
-                                    .resizable()
-                                    .frame(width: 24, height: 18)
-                                Text("undo")
-                            }.foregroundColor(.white)
-                        })
-                        
-                        Button(action: {
-                            
-                        }, label: {
-                            VStack {
-                                Image(systemName: "arrowshape.turn.up.right.fill")
-                                    .resizable()
-                                    .frame(width: 24, height: 18)
-                                Text("redo")
-                            }.foregroundColor(.white)
-                        })
-                        
-                        Button(action: {
-                            
-                        }, label: {
-                            VStack {
-                                Image(systemName: "pencil.line")
-                                    .resizable()
-                                    .frame(width: 24, height: 18)
-                                Text("stroke")
-                            }.foregroundColor(.white)
-                        })
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        
-                    }, label: {
-                        Text("Done")
-                            .bold()
-                            .font(.system(size: 20))
-                            .foregroundColor(.white)
-                    })
-                }
-                .padding(.leading, 20)
-                .padding(.bottom, 20)
-                .padding(.trailing, 20)
-                
-
-                VStack{
-                    // 색칠할 이미지
-                    let screenWidth = UIScreen.main.bounds.width
-                    
-                    if let floodFillImage = floodFillImage {
-                        ZoomableImageView(
-                            image: floodFillImage,
-                            onDraw: handleDraw,
-                            onDrawingStateChanged: handleDrawingStateChanged,
-                            scale: $scale,
-                            offset: $offset
-                        )
-                        .frame(width: screenWidth, height: screenWidth)
-                        .background(Color.white)
-                        .clipped()
-                    } else {
-                        if let imageName = imageName, let image = UIImage(named: imageName) {
-                            ZoomableImageView(
-                                image: image,
-                                onDraw: handleDraw,
-                                onDrawingStateChanged: handleDrawingStateChanged,
-                                scale: $scale,
-                                offset: $offset
-                            )
-                            .frame(width: screenWidth, height: screenWidth)
-                            .background(Color.white)
-                            .clipped()
-                            .onAppear(perform: initializeImage)
-                        } else {
-                            Text("이미지를 찾을 수 없습니다")
-                                .foregroundColor(.red)
-                        }
-                    }
-                    
-                    Spacer()
-                }
-                .padding(.top, 40)
-                .background(Color.gray)
-                
+                TopToolbar(onDismiss: { dismiss() })
+                ImageView()
                 Spacer()
             }
             .background(.black)
-            .padding(.bottom, 0)
             
-            // 컬러 팔레트 모달
+            ColorPalette()
+        }
+        .navigationBarHidden(true)
+        .onAppear(perform: setupInitialState)
+        .sheet(isPresented: $showingColorPicker) {
+            ColorPicker("색상 선택", selection: $selectedColor)
+                .padding()
+        }
+    }
+    
+    // MARK: - Subviews
+    @ViewBuilder
+    private func TopToolbar(onDismiss: @escaping () -> Void) -> some View {
+        HStack {
+            CloseButton(action: onDismiss)
+            Spacer()
+            ToolButtons()
+            Spacer()
+            DoneButton()
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 20)
+    }
+    
+    @ViewBuilder
+    private func CloseButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .frame(width: 20, height: 20)
+                .foregroundColor(.white)
+        }
+    }
+    
+    @ViewBuilder
+    private func ToolButtons() -> some View {
+        HStack(spacing: 20) {
+            ToolButton(icon: "arrowshape.turn.up.left.fill", text: "undo") { }
+            ToolButton(icon: "arrowshape.turn.up.right.fill", text: "redo") { }
+            ToolButton(icon: "pencil.line", text: "stroke") { }
+        }
+    }
+    
+    @ViewBuilder
+    private func ToolButton(icon: String, text: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             VStack {
-                Spacer()
-                
-                // 모달 팔레트
-                VStack(spacing: 0) {
-                    // 토글 버튼만 있는 헤더
-                    HStack {
-                        Spacer()
-                        
-                        Button(action: {
-                            withAnimation(.spring()) {
-                                showColorPalette.toggle()
-                                paletteHeight = showColorPalette ? expandedPaletteHeight : collapsedPaletteHeight
-                            }
-                        }) {
-                            Image(systemName: showColorPalette ? "chevron.down" : "chevron.up")
-                                .resizable()
-                                .foregroundColor(.white)
-                                .frame(width: 20,
-                                       height: 14)
-                        }
-                        .padding(.top, -20) // 토글 버튼을 모달 위로 올림
-                        
-                        Spacer()
-                    }
-                    .frame(height: 20) // 헤더 높이 축소
-                    
-                    // 확장된 상태일 때만 보이는 컨텐츠
-                    if showColorPalette {
-                        // 색상 팔레트
-                        LazyVGrid(columns: [
-                            GridItem(.adaptive(minimum: 60), spacing: 0)
-                        ], spacing: 10) {
-                            ForEach(colors, id: \.self) { color in
-                                Circle()
-                                    .fill(color)
-                                    .frame(width: 40, height: 40)
-                                    .overlay(
-                                        Circle()
-                                            .stroke(color == selectedColor ? Color.black : Color.clear, lineWidth: 3)
-                                    )
-                                    .onTapGesture {
-                                        selectedColor = color
-                                    }
-                            }
-                            
-                            // 사용자 정의 색상 선택 버튼
-                            Circle()
-                                .fill(Color.white)
-                                .frame(width: 40, height: 40)
-                                .overlay(
-                                    Image(systemName: "plus")
-                                        .foregroundColor(.black)
-                                )
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.gray, lineWidth: 1)
-                                )
-                                .onTapGesture {
-                                    showingColorPicker = true
-                                }
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, 20)
-                    }
-                }
-                .frame(height: paletteHeight)
-                .background(Color.black)
-                .cornerRadius(20, corners: [.topLeft, .topRight])
-                .shadow(radius: 5)
-                .animation(.spring(), value: paletteHeight)
+                Image(systemName: icon)
+                    .frame(width: 24, height: 18)
+                Text(text)
             }
-            .edgesIgnoringSafeArea(.bottom)
+            .foregroundColor(.white)
+        }
+    }
+    
+    @ViewBuilder
+    private func DoneButton() -> some View {
+        Button("Done") { }
+            .font(.system(size: 20, weight: .bold))
+            .foregroundColor(.white)
+    }
+    
+    @ViewBuilder
+    private func ImageView() -> some View {
+        let screenWidth = UIScreen.main.bounds.width
+        
+        VStack {
+            if let image = floodFillImage ?? UIImage(named: imageName ?? "") {
+                ZoomableImageView(
+                    image: image,
+                    onDraw: handleDraw,
+                    onDrawingStateChanged: handleDrawingStateChanged,
+                    scale: $scale,
+                    offset: $offset
+                )
+                .frame(width: screenWidth, height: screenWidth)
+                .background(Color.white)
+                .clipped()
+            } else {
+                Text("이미지를 찾을 수 없습니다")
+                    .foregroundColor(.red)
+            }
+            Spacer()
+        }
+        .padding(.top, 40)
+        .background(Color.gray)
+    }
+    
+    @ViewBuilder
+    private func ColorPalette() -> some View {
+        VStack {
+            Spacer()
             
-            // 컬러 피커 시트
-            .sheet(isPresented: $showingColorPicker) {
-                ColorPicker("색상 선택", selection: $selectedColor)
-                    .padding()
+            VStack(spacing: 0) {
+                PaletteToggleButton()
+                
+                if showColorPalette {
+                    ColorGrid()
+                }
+            }
+            .frame(height: showColorPalette ? expandedPaletteHeight : collapsedPaletteHeight)
+            .background(Color.black)
+            .cornerRadius(20, corners: [.topLeft, .topRight])
+            .shadow(radius: 5)
+            .animation(.spring(), value: showColorPalette)
+        }
+        .edgesIgnoringSafeArea(.bottom)
+    }
+    
+    @ViewBuilder
+    private func PaletteToggleButton() -> some View {
+        HStack {
+            Spacer()
+            Button {
+                withAnimation(.spring()) {
+                    showColorPalette.toggle()
+                }
+            } label: {
+                Image(systemName: showColorPalette ? "chevron.down" : "chevron.up")
+                    .frame(width: 20, height: 14)
+                    .foregroundColor(.white)
+            }
+            .padding(.top, -20)
+            Spacer()
+        }
+        .frame(height: 20)
+    }
+    
+    @ViewBuilder
+    private func ColorGrid() -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 60), spacing: 0)], spacing: 10) {
+            ForEach(colors, id: \.self) { color in
+                ColorCircle(color: color, isSelected: color == selectedColor) {
+                    selectedColor = color
+                }
+            }
+            
+            CustomColorButton {
+                showingColorPicker = true
             }
         }
-        .onAppear {
-            // 초기 상태에서 모달의 헤더 부분만 표시
-            paletteHeight = collapsedPaletteHeight
-        }
-        .navigationBarHidden(true) // 기본 네비게이션 바 숨김
+        .padding(.horizontal)
+        .padding(.vertical, 20)
+    }
+    
+    @ViewBuilder
+    private func ColorCircle(color: Color, isSelected: Bool, onTap: @escaping () -> Void) -> some View {
+        Circle()
+            .fill(color)
+            .frame(width: 40, height: 40)
+            .overlay(
+                Circle()
+                    .stroke(isSelected ? Color.black : Color.clear, lineWidth: 3)
+            )
+            .onTapGesture(perform: onTap)
+    }
+    
+    @ViewBuilder
+    private func CustomColorButton(onTap: @escaping () -> Void) -> some View {
+        Circle()
+            .fill(Color.white)
+            .frame(width: 40, height: 40)
+            .overlay(
+                Image(systemName: "plus")
+                    .foregroundColor(.black)
+            )
+            .overlay(
+                Circle()
+                    .stroke(Color.gray, lineWidth: 1)
+            )
+            .onTapGesture(perform: onTap)
+    }
+}
 
-    }
-    
-    // 이미지 초기화
-    func initializeImage() {
-        guard let imageName = imageName, let originalImage = UIImage(named: imageName) else { return }
-        floodFillImage = originalImage
-    }
-    
-    // 드로잉을 위한 UIView
-    // 2. DrawableImageView를 ZoomableImageView로 교체
-    struct ZoomableImageView: UIViewRepresentable {
-        var image: UIImage
-        var onDraw: (CGPoint) -> Void
-        var onDrawingStateChanged: (Bool) -> Void
-        @Binding var scale: CGFloat
-        @Binding var offset: CGSize
-        
-        func makeUIView(context: Context) -> UIScrollView {
-            let scrollView = UIScrollView()
-            let imageView = UIImageView(image: image)
-            
-            // ScrollView 설정
-            scrollView.delegate = context.coordinator
-            scrollView.minimumZoomScale = 1.0
-            scrollView.maximumZoomScale = 5.0
-            scrollView.zoomScale = scale
-            scrollView.contentOffset = CGPoint(x: offset.width, y: offset.height)
-            scrollView.showsVerticalScrollIndicator = false
-            scrollView.showsHorizontalScrollIndicator = false
-            
-            // ImageView 설정
-            imageView.contentMode = .scaleAspectFit
-            imageView.isUserInteractionEnabled = true
-            
-            // 제스처 추가
-            let panGesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
-            panGesture.delegate = context.coordinator
-            imageView.addGestureRecognizer(panGesture)
-            
-            scrollView.addSubview(imageView)
-            
-            // Auto Layout 설정
-            imageView.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                imageView.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
-                imageView.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
-                imageView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
-                imageView.heightAnchor.constraint(equalTo: scrollView.heightAnchor)
-            ])
-            
-            return scrollView
-        }
-        
-        func updateUIView(_ uiView: UIScrollView, context: Context) {
-            if let imageView = uiView.subviews.first as? UIImageView {
-                imageView.image = image
-            }
-            uiView.zoomScale = scale
-            uiView.contentOffset = CGPoint(x: offset.width, y: offset.height)
-        }
-        
-        func makeCoordinator() -> Coordinator {
-            Coordinator(self)
-        }
-        
-        class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
-            var parent: ZoomableImageView
-            var lastPoint: CGPoint?
-            
-            init(_ parent: ZoomableImageView) {
-                self.parent = parent
-            }
-            
-            // UIScrollViewDelegate
-            func viewForZooming(in scrollView: UIScrollView) -> UIView? {
-                return scrollView.subviews.first
-            }
-            
-            func scrollViewDidZoom(_ scrollView: UIScrollView) {
-                parent.scale = scrollView.zoomScale
-            }
-            
-            func scrollViewDidScroll(_ scrollView: UIScrollView) {
-                parent.offset = CGSize(width: scrollView.contentOffset.x, height: scrollView.contentOffset.y)
-            }
-            
-            // UIGestureRecognizerDelegate
-            func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-                return false // 드로잉 제스처와 스크롤 제스처가 동시에 인식되지 않도록
-            }
-            
-            @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
-                guard let scrollView = gesture.view?.superview as? UIScrollView,
-                      let imageView = gesture.view as? UIImageView,
-                      let image = imageView.image else { return }
-                
-                let location = gesture.location(in: imageView)
-                
-                // 이미지뷰의 실제 이미지 프레임 계산
-                let viewSize = imageView.bounds.size
-                let imageSize = image.size
-                
-                var imageFrame = CGRect.zero
-                
-                if imageSize.width / imageSize.height > viewSize.width / viewSize.height {
-                    let scaledHeight = viewSize.width * (imageSize.height / imageSize.width)
-                    imageFrame = CGRect(x: 0,
-                                      y: (viewSize.height - scaledHeight) / 2,
-                                      width: viewSize.width,
-                                      height: scaledHeight)
-                } else {
-                    let scaledWidth = viewSize.height * (imageSize.width / imageSize.height)
-                    imageFrame = CGRect(x: (viewSize.width - scaledWidth) / 2,
-                                      y: 0,
-                                      width: scaledWidth,
-                                      height: viewSize.height)
-                }
-                
-                // 터치 위치가 이미지 영역 안에 있는지 확인
-                guard imageFrame.contains(location) else { return }
-                
-                // 줌 스케일을 고려한 실제 이미지 좌표 계산
-                let normalizedX = (location.x - imageFrame.origin.x) / imageFrame.width
-                let normalizedY = (location.y - imageFrame.origin.y) / imageFrame.height
-                
-                let pixelX = normalizedX * imageSize.width
-                let pixelY = normalizedY * imageSize.height
-                
-                let currentPoint = CGPoint(x: pixelX, y: pixelY)
-                
-                // 제스처 상태에 따라 드로잉 처리
-                if gesture.state == .began {
-                    parent.onDrawingStateChanged(true)
-                    lastPoint = currentPoint
-                    parent.onDraw(currentPoint)
-                } else if gesture.state == .changed {
-                    if let lastPoint = lastPoint {
-                        interpolatePoints(from: lastPoint, to: currentPoint)
-                    }
-                    lastPoint = currentPoint
-                } else if gesture.state == .ended || gesture.state == .cancelled {
-                    parent.onDrawingStateChanged(false)
-                    lastPoint = nil
-                }
-            }
-            
-            private func interpolatePoints(from startPoint: CGPoint, to endPoint: CGPoint) {
-                let distance = hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y)
-                let numberOfPoints = max(Int(distance), 10)
-                
-                if numberOfPoints < 2 {
-                    parent.onDraw(endPoint)
-                    return
-                }
-                
-                for i in 1...numberOfPoints {
-                    let ratio = CGFloat(i) / CGFloat(numberOfPoints)
-                    let x = startPoint.x + (endPoint.x - startPoint.x) * ratio
-                    let y = startPoint.y + (endPoint.y - startPoint.y) * ratio
-                    let interpolatedPoint = CGPoint(x: x, y: y)
-                    parent.onDraw(interpolatedPoint)
-                }
-            }
+// MARK: - Setup and Helpers
+extension ColoringView {
+    private func setupInitialState() {
+        if let imageName = imageName, let originalImage = UIImage(named: imageName) {
+            floodFillImage = ImageProcessor.resizeImageIfNeeded(originalImage, maxSize: 1000)
         }
     }
     
-    // 드로잉 상태 변경 처리
-    func handleDrawingStateChanged(_ isCurrentlyDrawing: Bool) {
+    private func handleDrawingStateChanged(_ isCurrentlyDrawing: Bool) {
         isDrawing = isCurrentlyDrawing
         
-        // 드로잉이 끝나면 현재 영역 마스크 초기화
         if !isCurrentlyDrawing {
             currentAreaMask = nil
             previousDrawPoint = nil
         }
     }
     
-    // 드로잉 처리
-    func handleDraw(at location: CGPoint) {
-        guard let currentImage = floodFillImage else { return }
+    private func handleDraw(at location: CGPoint) {
+        guard let currentImage = floodFillImage, !isProcessing else { return }
         
-        // 드로잉 색칠 실행
+        isProcessing = true
+        
         DispatchQueue.global(qos: .userInitiated).async {
-            let coloredImage: UIImage
-            
-            // 드로잉 시작 시 영역 마스크 생성
-            if self.isDrawing && self.currentAreaMask == nil {
-                // 현재 영역 마스크와 이미지 동시에 가져오기
-                let (maskAndImage) = self.createAreaMask(image: currentImage, at: location)
-                self.currentAreaMask = maskAndImage.0
-                
-                // 첫 번째 점은 점으로 그리기
-                coloredImage = self.drawColor(image: maskAndImage.1, at: location, with: UIColor(self.selectedColor))
-                self.previousDrawPoint = location
-            } else if let previousPoint = self.previousDrawPoint {
-                // 이전 점이 있으면 이전 점과 현재 점 사이에 선 그리기
-                coloredImage = self.drawLine(image: currentImage, from: previousPoint, to: location, with: UIColor(self.selectedColor))
-                self.previousDrawPoint = location
-            } else {
-                // 첫 점은 점으로 그리기
-                coloredImage = self.drawColor(image: currentImage, at: location, with: UIColor(self.selectedColor))
-                self.previousDrawPoint = location
-            }
+            let coloredImage = processDrawing(at: location, on: currentImage)
             
             DispatchQueue.main.async {
                 self.floodFillImage = coloredImage
+                self.isProcessing = false
             }
         }
     }
     
-    // 두 점 사이에 선을 그리는 함수
-    func drawLine(image: UIImage, from startPoint: CGPoint, to endPoint: CGPoint, with color: UIColor) -> UIImage {
+    private func processDrawing(at location: CGPoint, on image: UIImage) -> UIImage {
+        let uiColor = UIColor(selectedColor)
+        
+        if isDrawing && currentAreaMask == nil {
+            let (mask, processedImage) = ImageProcessor.createAreaMask(image: image, at: location)
+            currentAreaMask = mask
+            let result = ImageProcessor.drawColor(image: processedImage, at: location, with: uiColor, areaMask: mask)
+            previousDrawPoint = location
+            return result
+        } else if let previousPoint = previousDrawPoint {
+            let result = ImageProcessor.drawLine(
+                image: image,
+                from: previousPoint,
+                to: location,
+                with: uiColor,
+                areaMask: currentAreaMask
+            )
+            previousDrawPoint = location
+            return result
+        } else {
+            let result = ImageProcessor.drawColor(
+                image: image,
+                at: location,
+                with: uiColor,
+                areaMask: currentAreaMask
+            )
+            previousDrawPoint = location
+            return result
+        }
+    }
+}
+
+// MARK: - Image Processing
+struct ImageProcessor {
+    static func resizeImageIfNeeded(_ image: UIImage, maxSize: CGFloat = 1000) -> UIImage {
+        let size = image.size
+        let maxDimension = max(size.width, size.height)
+        
+        guard maxDimension > maxSize else { return image }
+        
+        let scale = maxSize / maxDimension
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+        
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+        defer { UIGraphicsEndImageContext() }
+        image.draw(in: CGRect(origin: .zero, size: newSize))
+        return UIGraphicsGetImageFromCurrentImageContext() ?? image
+    }
+    
+    static func createAreaMask(image: UIImage, at point: CGPoint) -> ([[Bool]], UIImage) {
+        guard let cgImage = image.cgImage else { return ([], image) }
+        let width = cgImage.width
+        let height = cgImage.height
+        
+        var mask = Array(repeating: Array(repeating: false, count: width), count: height)
+        
+        let context = createImageContext(width: width, height: height)
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        
+        guard let data = context.data else { return (mask, image) }
+        let pixelData = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        
+        let startX = Int(point.x)
+        let startY = Int(point.y)
+        
+        guard isValidPoint(x: startX, y: startY, width: width, height: height) else {
+            return (mask, image)
+        }
+        
+        let startColor = getPixelColor(pixelData: pixelData, x: startX, y: startY, width: width)
+        
+        guard !isBlackLine(startColor) else { return (mask, image) }
+        
+        floodFill(mask: &mask, pixelData: pixelData, startX: startX, startY: startY,
+                  startColor: startColor, width: width, height: height)
+        
+        return (mask, image)
+    }
+    
+    static func drawColor(image: UIImage, at point: CGPoint, with color: UIColor, areaMask: [[Bool]]?) -> UIImage {
         guard let cgImage = image.cgImage else { return image }
         let width = cgImage.width
         let height = cgImage.height
         
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bytesPerPixel = 4
-        let bytesPerRow = bytesPerPixel * width
-        let bitsPerComponent = 8
-        
-        let context = CGContext(data: nil,
-                                width: width,
-                                height: height,
-                                bitsPerComponent: bitsPerComponent,
-                                bytesPerRow: bytesPerRow,
-                                space: colorSpace,
-                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        
+        let context = createImageContext(width: width, height: height)
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
         
         guard let data = context.data else { return image }
+        let pixelData = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
         
-        let pixelData = data.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel)
+        let colorComponents = getColorComponents(color)
+        let brushRadius = calculateBrushRadius(imageSize: CGSize(width: CGFloat(width), height: CGFloat(height)))
         
-        // 새 색상 준비
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
+        drawBrush(pixelData: pixelData, center: point, color: colorComponents,
+                  brushRadius: brushRadius, areaMask: areaMask, width: width, height: height)
+        
+        return createImageFromContext(context) ?? image
+    }
+    
+    static func drawLine(image: UIImage, from startPoint: CGPoint, to endPoint: CGPoint,
+                        with color: UIColor, areaMask: [[Bool]]?) -> UIImage {
+        guard let cgImage = image.cgImage else { return image }
+        let width = cgImage.width
+        let height = cgImage.height
+        
+        let context = createImageContext(width: width, height: height)
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        
+        guard let data = context.data else { return image }
+        let pixelData = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        
+        let colorComponents = getColorComponents(color)
+        let brushRadius = calculateBrushRadius(imageSize: CGSize(width: CGFloat(width), height: CGFloat(height)))
+        
+        drawBresenhamLine(pixelData: pixelData, from: startPoint, to: endPoint,
+                         color: colorComponents, brushRadius: brushRadius,
+                         areaMask: areaMask, width: width, height: height)
+        
+        return createImageFromContext(context) ?? image
+    }
+}
+
+// MARK: - Image Processing Helpers
+extension ImageProcessor {
+    private static func createImageContext(width: Int, height: Int) -> CGContext {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        return CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                        bytesPerRow: 4 * width, space: colorSpace,
+                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    }
+    
+    private static func isValidPoint(x: Int, y: Int, width: Int, height: Int) -> Bool {
+        return x >= 0 && x < width && y >= 0 && y < height
+    }
+    
+    private static func getPixelColor(pixelData: UnsafeMutablePointer<UInt8>, x: Int, y: Int, width: Int) -> (UInt8, UInt8, UInt8) {
+        let offset = (y * width * 4) + (x * 4)
+        return (pixelData[offset], pixelData[offset + 1], pixelData[offset + 2])
+    }
+    
+    private static func isBlackLine(_ color: (UInt8, UInt8, UInt8)) -> Bool {
+        return color.0 < 30 && color.1 < 30 && color.2 < 30
+    }
+    
+    private static func getColorComponents(_ color: UIColor) -> (UInt8, UInt8, UInt8) {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
         color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return (UInt8(red * 255), UInt8(green * 255), UInt8(blue * 255))
+    }
+    
+    private static func calculateBrushRadius(imageSize: CGSize) -> Int {
+        let maxDimension = max(imageSize.width, imageSize.height)
+        return max(6, Int(maxDimension / 120))
+    }
+    
+    private static func createImageFromContext(_ context: CGContext) -> UIImage? {
+        guard let cgImage = context.makeImage() else { return nil }
+        return UIImage(cgImage: cgImage)
+    }
+    
+    private static func floodFill(mask: inout [[Bool]], pixelData: UnsafeMutablePointer<UInt8>,
+                                 startX: Int, startY: Int, startColor: (UInt8, UInt8, UInt8),
+                                 width: Int, height: Int) {
+        var stack = [(startX, startY)]
+        var visited = Array(repeating: Array(repeating: false, count: width), count: height)
         
-        let newRed = UInt8(red * 255)
-        let newGreen = UInt8(green * 255)
-        let newBlue = UInt8(blue * 255)
-        
-        // 현재 영역 마스크가 없으면 새로 생성해야 함 (이 부분은 handleDraw에서 처리)
-        guard let areaMask = currentAreaMask, isDrawing else {
-            return image
+        while !stack.isEmpty {
+            let (x, y) = stack.removeLast()
+            
+            guard isValidPoint(x: x, y: y, width: width, height: height) && !visited[y][x] else { continue }
+            
+            visited[y][x] = true
+            
+            let currentColor = getPixelColor(pixelData: pixelData, x: x, y: y, width: width)
+            let isSimilar = abs(Int(currentColor.0) - Int(startColor.0)) < 20 &&
+                           abs(Int(currentColor.1) - Int(startColor.1)) < 20 &&
+                           abs(Int(currentColor.2) - Int(startColor.2)) < 20
+            
+            if isSimilar && !isBlackLine(currentColor) {
+                mask[y][x] = true
+                
+                stack.append((x+1, y))
+                stack.append((x-1, y))
+                stack.append((x, y+1))
+                stack.append((x, y-1))
+            }
         }
+    }
+    
+    private static func drawBrush(pixelData: UnsafeMutablePointer<UInt8>, center: CGPoint,
+                                 color: (UInt8, UInt8, UInt8), brushRadius: Int,
+                                 areaMask: [[Bool]]?, width: Int, height: Int) {
+        let startX = Int(center.x)
+        let startY = Int(center.y)
         
-        // 브러시 크기
-        let brushRadius = 5
-        
-        // 브레젠험 알고리즘을 사용하여 선 그리기
+        for dy in -brushRadius...brushRadius {
+            for dx in -brushRadius...brushRadius {
+                guard dx*dx + dy*dy <= brushRadius*brushRadius else { continue }
+                
+                let nx = startX + dx
+                let ny = startY + dy
+                
+                guard isValidPoint(x: nx, y: ny, width: width, height: height) else { continue }
+                
+                if let mask = areaMask {
+                    guard ny < mask.count && nx < mask[ny].count && mask[ny][nx] else { continue }
+                }
+                
+                let offset = (ny * width * 4) + (nx * 4)
+                let currentColor = (pixelData[offset], pixelData[offset + 1], pixelData[offset + 2])
+                
+                if !isBlackLine(currentColor) {
+                    pixelData[offset] = color.0
+                    pixelData[offset + 1] = color.1
+                    pixelData[offset + 2] = color.2
+                }
+            }
+        }
+    }
+    
+    private static func drawBresenhamLine(pixelData: UnsafeMutablePointer<UInt8>, from startPoint: CGPoint,
+                                         to endPoint: CGPoint, color: (UInt8, UInt8, UInt8),
+                                         brushRadius: Int, areaMask: [[Bool]]?, width: Int, height: Int) {
         let dx = abs(Int(endPoint.x) - Int(startPoint.x))
         let dy = abs(Int(endPoint.y) - Int(startPoint.y))
         let sx = Int(startPoint.x) < Int(endPoint.x) ? 1 : -1
@@ -495,49 +478,11 @@ struct ColoringView: View {
         var y = Int(startPoint.y)
         
         while true {
-            // 각 점에서 원형 브러시로 색칠
-            for by in -brushRadius...brushRadius {
-                for bx in -brushRadius...brushRadius {
-                    // 원 내부만 색칠
-                    if bx*bx + by*by > brushRadius*brushRadius {
-                        continue
-                    }
-                    
-                    let nx = x + bx
-                    let ny = y + by
-                    
-                    // 이미지 범위 확인
-                    if nx < 0 || nx >= width || ny < 0 || ny >= height {
-                        continue
-                    }
-                    
-                    // 현재 영역 마스크 확인 - 영역 내에 있는 픽셀만 색칠
-                    if ny < areaMask.count && nx < areaMask[ny].count && areaMask[ny][nx] {
-                        let offset = (ny * bytesPerRow) + (nx * bytesPerPixel)
-                        
-                        // 현재 픽셀 색상 확인 (검은색 선 위는 색칠하지 않음)
-                        let currentRed = pixelData[offset]
-                        let currentGreen = pixelData[offset + 1]
-                        let currentBlue = pixelData[offset + 2]
-                        
-                        let isNotBlackLine = currentRed >= 30 || currentGreen >= 30 || currentBlue >= 30
-                        
-                        if isNotBlackLine {
-                            // 색상 변경
-                            pixelData[offset] = newRed
-                            pixelData[offset + 1] = newGreen
-                            pixelData[offset + 2] = newBlue
-                        }
-                    }
-                }
-            }
+            drawBrush(pixelData: pixelData, center: CGPoint(x: x, y: y), color: color,
+                     brushRadius: brushRadius, areaMask: areaMask, width: width, height: height)
             
-            // 종료 조건 확인
-            if x == Int(endPoint.x) && y == Int(endPoint.y) {
-                break
-            }
+            if x == Int(endPoint.x) && y == Int(endPoint.y) { break }
             
-            // 다음 점으로 이동
             let e2 = 2 * err
             if e2 > -dy {
                 err -= dy
@@ -548,216 +493,178 @@ struct ColoringView: View {
                 y += sy
             }
         }
-        
-        let newContext = CGContext(data: data,
-                                   width: width,
-                                   height: height,
-                                   bitsPerComponent: bitsPerComponent,
-                                   bytesPerRow: bytesPerRow,
-                                   space: colorSpace,
-                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        
-        guard let newCGImage = newContext.makeImage() else { return image }
-        return UIImage(cgImage: newCGImage)
-    }
-    
-    // 영역 마스크 생성 (Flood Fill 알고리즘 사용)
-    func createAreaMask(image: UIImage, at point: CGPoint) -> ([[Bool]], UIImage) {
-        guard let cgImage = image.cgImage else { return ([], image) }
-        let width = cgImage.width
-        let height = cgImage.height
-        
-        // 마스크 배열 초기화
-        var mask = Array(repeating: Array(repeating: false, count: width), count: height)
-        
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bytesPerPixel = 4
-        let bytesPerRow = bytesPerPixel * width
-        let bitsPerComponent = 8
-        
-        let context = CGContext(data: nil,
-                                width: width,
-                                height: height,
-                                bitsPerComponent: bitsPerComponent,
-                                bytesPerRow: bytesPerRow,
-                                space: colorSpace,
-                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-        
-        guard let data = context.data else { return (mask, image) }
-        
-        let pixelData = data.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel)
-        
-        let startX = Int(point.x)
-        let startY = Int(point.y)
-        
-        // 범위 체크
-        guard startX >= 0 && startX < width && startY >= 0 && startY < height else { return (mask, image) }
-        
-        // 시작 위치의 색상
-        let startOffset = (startY * bytesPerRow) + (startX * bytesPerPixel)
-        let startRed = pixelData[startOffset]
-        let startGreen = pixelData[startOffset + 1]
-        let startBlue = pixelData[startOffset + 2]
-        
-        // 검은색 선인지 확인 (RGB 값이 모두 낮으면 검은색으로 간주)
-        let isBlackLine = startRed < 30 && startGreen < 30 && startBlue < 30
-        if isBlackLine {
-            return (mask, image)
-        }
-        
-        // 플러드 필 알고리즘으로 영역 마스크 생성
-        var queue = [(startX, startY)]
-        var visited = Set<String>()
-        
-        while !queue.isEmpty {
-            let (x, y) = queue.removeFirst()
-            let key = "\(x),\(y)"
-            
-            // 이미 방문한 픽셀은 건너뜀
-            if visited.contains(key) {
-                continue
-            }
-            
-            visited.insert(key)
-            
-            let offset = (y * bytesPerRow) + (x * bytesPerPixel)
-            
-            // 픽셀이 범위를 벗어나면 건너뜀
-            guard offset >= 0 && offset < width * height * bytesPerPixel - 3 else {
-                continue
-            }
-            
-            // 같은 색상 영역인지 확인 (색상 차이가 적으면 같은 색상으로 간주)
-            let currentRed = pixelData[offset]
-            let currentGreen = pixelData[offset + 1]
-            let currentBlue = pixelData[offset + 2]
-            
-            let isSimilarToStartColor = abs(Int(currentRed) - Int(startRed)) < 30 &&
-            abs(Int(currentGreen) - Int(startGreen)) < 30 &&
-            abs(Int(currentBlue) - Int(startBlue)) < 30
-            
-            let isNotBlackLine = currentRed >= 30 || currentGreen >= 30 || currentBlue >= 30
-            
-            if isSimilarToStartColor && isNotBlackLine {
-                // 마스크 설정
-                mask[y][x] = true
-                
-                // 4방향 이웃 픽셀 큐에 추가
-                let neighbors = [(x+1, y), (x-1, y), (x, y+1), (x, y-1)]
-                
-                for (nx, ny) in neighbors {
-                    if nx >= 0 && nx < width && ny >= 0 && ny < height {
-                        queue.append((nx, ny))
-                    }
-                }
-            }
-        }
-        
-        return (mask, image)
-    }
-    
-    // 드로잉 색칠 알고리즘 구현
-    func drawColor(image: UIImage, at point: CGPoint, with color: UIColor) -> UIImage {
-        guard let cgImage = image.cgImage else { return image }
-        let width = cgImage.width
-        let height = cgImage.height
-        
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bytesPerPixel = 4
-        let bytesPerRow = bytesPerPixel * width
-        let bitsPerComponent = 8
-        
-        let context = CGContext(data: nil,
-                                width: width,
-                                height: height,
-                                bitsPerComponent: bitsPerComponent,
-                                bytesPerRow: bytesPerRow,
-                                space: colorSpace,
-                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-        
-        guard let data = context.data else { return image }
-        
-        let pixelData = data.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel)
-        
-        let startX = Int(point.x)
-        let startY = Int(point.y)
-        
-        // 범위 체크
-        guard startX >= 0 && startX < width && startY >= 0 && startY < height else { return image }
-        
-        // 새 색상 준비
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
-        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        
-        let newRed = UInt8(red * 255)
-        let newGreen = UInt8(green * 255)
-        let newBlue = UInt8(blue * 255)
-        
-        // 현재 영역 마스크가 없으면 새로 생성해야 함 (이 부분은 handleDraw에서 처리)
-        guard let areaMask = currentAreaMask, isDrawing else {
-            return image
-        }
-        
-        // 작은 원 형태로 색칠 (브러시 효과)
-        let brushRadius = 5 // 브러시 크기
-        
-        for dy in -brushRadius...brushRadius {
-            for dx in -brushRadius...brushRadius {
-                // 원 내부만 색칠
-                if dx*dx + dy*dy > brushRadius*brushRadius {
-                    continue
-                }
-                
-                let nx = startX + dx
-                let ny = startY + dy
-                
-                // 이미지 범위 확인
-                if nx < 0 || nx >= width || ny < 0 || ny >= height {
-                    continue
-                }
-                
-                // 현재 영역 마스크 확인 - 영역 내에 있는 픽셀만 색칠
-                if ny < areaMask.count && nx < areaMask[ny].count && areaMask[ny][nx] {
-                    let offset = (ny * bytesPerRow) + (nx * bytesPerPixel)
-                    
-                    // 현재 픽셀 색상 확인 (검은색 선 위는 색칠하지 않음)
-                    let currentRed = pixelData[offset]
-                    let currentGreen = pixelData[offset + 1]
-                    let currentBlue = pixelData[offset + 2]
-                    
-                    let isNotBlackLine = currentRed >= 30 || currentGreen >= 30 || currentBlue >= 30
-                    
-                    if isNotBlackLine {
-                        // 색상 변경
-                        pixelData[offset] = newRed
-                        pixelData[offset + 1] = newGreen
-                        pixelData[offset + 2] = newBlue
-                    }
-                }
-            }
-        }
-        
-        let newContext = CGContext(data: data,
-                                   width: width,
-                                   height: height,
-                                   bitsPerComponent: bitsPerComponent,
-                                   bytesPerRow: bytesPerRow,
-                                   space: colorSpace,
-                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        
-        guard let newCGImage = newContext.makeImage() else { return image }
-        return UIImage(cgImage: newCGImage)
     }
 }
 
-// RoundedCorner 형태를 위한 extension
+// MARK: - ZoomableImageView
+struct ZoomableImageView: UIViewRepresentable {
+    let image: UIImage
+    let onDraw: (CGPoint) -> Void
+    let onDrawingStateChanged: (Bool) -> Void
+    @Binding var scale: CGFloat
+    @Binding var offset: CGSize
+    
+    func makeUIView(context: Context) -> UIScrollView {
+        let scrollView = UIScrollView()
+        let imageView = UIImageView(image: image)
+        
+        setupScrollView(scrollView, context: context)
+        setupImageView(imageView, context: context)
+        setupConstraints(scrollView: scrollView, imageView: imageView)
+        
+        return scrollView
+    }
+    
+    func updateUIView(_ uiView: UIScrollView, context: Context) {
+        if let imageView = uiView.subviews.first as? UIImageView {
+            imageView.image = image
+        }
+        uiView.zoomScale = scale
+        uiView.contentOffset = CGPoint(x: offset.width, y: offset.height)
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    private func setupScrollView(_ scrollView: UIScrollView, context: Context) {
+        scrollView.delegate = context.coordinator
+        scrollView.minimumZoomScale = 1.0
+        scrollView.maximumZoomScale = 5.0
+        scrollView.zoomScale = scale
+        scrollView.contentOffset = CGPoint(x: offset.width, y: offset.height)
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.showsHorizontalScrollIndicator = false
+    }
+    
+    private func setupImageView(_ imageView: UIImageView, context: Context) {
+        imageView.contentMode = .scaleAspectFit
+        imageView.isUserInteractionEnabled = true
+        
+        let panGesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
+        panGesture.delegate = context.coordinator
+        imageView.addGestureRecognizer(panGesture)
+    }
+    
+    private func setupConstraints(scrollView: UIScrollView, imageView: UIImageView) {
+        scrollView.addSubview(imageView)
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            imageView.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
+            imageView.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
+            imageView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            imageView.heightAnchor.constraint(equalTo: scrollView.heightAnchor)
+        ])
+    }
+}
+
+// MARK: - Coordinator
+extension ZoomableImageView {
+    class Coordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
+        var parent: ZoomableImageView
+        var lastPoint: CGPoint?
+        
+        init(_ parent: ZoomableImageView) {
+            self.parent = parent
+        }
+        
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+            return scrollView.subviews.first
+        }
+        
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            parent.scale = scrollView.zoomScale
+        }
+        
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            parent.offset = CGSize(width: scrollView.contentOffset.x, height: scrollView.contentOffset.y)
+        }
+        
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            return false
+        }
+        
+        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+            guard let imageView = gesture.view as? UIImageView,
+                  let image = imageView.image else { return }
+            
+            let location = gesture.location(in: imageView)
+            
+            guard let pixelPoint = convertToPixelCoordinates(location: location, imageView: imageView, image: image)
+            else { return }
+            
+            handleGestureState(gesture.state, at: pixelPoint)
+        }
+        
+        private func convertToPixelCoordinates(location: CGPoint, imageView: UIImageView, image: UIImage) -> CGPoint? {
+            let viewSize = imageView.bounds.size
+            let imageSize = image.size
+            
+            let imageAspect = imageSize.width / imageSize.height
+            let viewAspect = viewSize.width / viewSize.height
+            
+            let (displayedImageSize, imageOrigin) = calculateImageFrame(viewSize: viewSize, imageAspect: imageAspect, viewAspect: viewAspect)
+            let imageFrame = CGRect(origin: imageOrigin, size: displayedImageSize)
+            
+            guard imageFrame.contains(location) else { return nil }
+            
+            let normalizedX = (location.x - imageFrame.origin.x) / imageFrame.width
+            let normalizedY = (location.y - imageFrame.origin.y) / imageFrame.height
+            
+            return CGPoint(x: normalizedX * imageSize.width, y: normalizedY * imageSize.height)
+        }
+        
+        private func calculateImageFrame(viewSize: CGSize, imageAspect: CGFloat, viewAspect: CGFloat) -> (CGSize, CGPoint) {
+            if imageAspect > viewAspect {
+                let size = CGSize(width: viewSize.width, height: viewSize.width / imageAspect)
+                let origin = CGPoint(x: 0, y: (viewSize.height - size.height) / 2)
+                return (size, origin)
+            } else {
+                let size = CGSize(width: viewSize.height * imageAspect, height: viewSize.height)
+                let origin = CGPoint(x: (viewSize.width - size.width) / 2, y: 0)
+                return (size, origin)
+            }
+        }
+        
+        private func handleGestureState(_ state: UIGestureRecognizer.State, at point: CGPoint) {
+            switch state {
+            case .began:
+                parent.onDrawingStateChanged(true)
+                lastPoint = point
+                parent.onDraw(point)
+            case .changed:
+                if let lastPoint = lastPoint {
+                    interpolatePoints(from: lastPoint, to: point)
+                }
+                lastPoint = point
+            case .ended, .cancelled:
+                parent.onDrawingStateChanged(false)
+                lastPoint = nil
+            default:
+                break
+            }
+        }
+        
+        private func interpolatePoints(from startPoint: CGPoint, to endPoint: CGPoint) {
+            let distance = hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y)
+            let numberOfPoints = max(Int(distance), 10)
+            
+            guard numberOfPoints >= 2 else {
+                parent.onDraw(endPoint)
+                return
+            }
+            
+            for i in 1...numberOfPoints {
+                let ratio = CGFloat(i) / CGFloat(numberOfPoints)
+                let x = startPoint.x + (endPoint.x - startPoint.x) * ratio
+                let y = startPoint.y + (endPoint.y - startPoint.y) * ratio
+                parent.onDraw(CGPoint(x: x, y: y))
+            }
+        }
+    }
+}
+
+// MARK: - Shape Extensions
 struct RoundedCorner: Shape {
     var radius: CGFloat = .infinity
     var corners: UIRectCorner = .allCorners
@@ -776,6 +683,6 @@ extension View {
 
 struct ColoringView_Previews: PreviewProvider {
     static var previews: some View {
-        ColoringView(imageName: "paint")
+        ColoringView(imageName: "panda1")
     }
 }
