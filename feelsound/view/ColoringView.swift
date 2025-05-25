@@ -11,6 +11,7 @@ struct ColoringView: View {
     @Environment(\.dismiss) private var dismiss
     
     // MARK: - State Properties
+    @State private var originalImage: UIImage? // 원본 이미지
     @State private var floodFillImage: UIImage?
     @State private var selectedColor: Color = .red
     @State private var showingColorPicker = false
@@ -28,6 +29,7 @@ struct ColoringView: View {
     private let collapsedPaletteHeight: CGFloat = 80
     private let expandedPaletteHeight: CGFloat = 200
     private let colors: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .pink]
+
     
     let imageName: String?
     
@@ -216,8 +218,10 @@ struct ColoringView: View {
 // MARK: - Setup and Helpers
 extension ColoringView {
     private func setupInitialState() {
-        if let imageName = imageName, let originalImage = UIImage(named: imageName) {
-            floodFillImage = ImageProcessor.resizeImageIfNeeded(originalImage, maxSize: 1000)
+        if let imageName = imageName, let image = UIImage(named: imageName) {
+            let resizedImage = ImageProcessor.resizeImageIfNeeded(image, maxSize: 1000)
+            originalImage = resizedImage
+            floodFillImage = resizedImage
         }
     }
     
@@ -249,9 +253,10 @@ extension ColoringView {
         let uiColor = UIColor(selectedColor)
         
         if isDrawing && currentAreaMask == nil {
-            let (mask, processedImage) = ImageProcessor.createAreaMask(image: image, at: location)
+            // 원본 이미지로 영역 마스크 생성
+            let (mask, _) = ImageProcessor.createAreaMask(image: originalImage ?? image, at: location)
             currentAreaMask = mask
-            let result = ImageProcessor.drawColor(image: processedImage, at: location, with: uiColor, areaMask: mask)
+            let result = ImageProcessor.drawColor(image: image, at: location, with: uiColor, areaMask: mask)
             previousDrawPoint = location
             return result
         } else if let previousPoint = previousDrawPoint {
@@ -419,11 +424,20 @@ extension ImageProcessor {
             visited[y][x] = true
             
             let currentColor = getPixelColor(pixelData: pixelData, x: x, y: y, width: width)
-            let isSimilar = abs(Int(currentColor.0) - Int(startColor.0)) < 20 &&
-                           abs(Int(currentColor.1) - Int(startColor.1)) < 20 &&
-                           abs(Int(currentColor.2) - Int(startColor.2)) < 20
             
-            if isSimilar && !isBlackLine(currentColor) {
+            guard !isBlackLine(currentColor) else { continue }
+            
+            let isSimilarToStart = abs(Int(currentColor.0) - Int(startColor.0)) < 20 &&
+                                  abs(Int(currentColor.1) - Int(startColor.1)) < 20 &&
+                                  abs(Int(currentColor.2) - Int(startColor.2)) < 20
+            
+            // 시작점이 이미 색칠된 영역인 경우, 비슷한 색칠된 영역들도 포함
+            let isStartColored = !isWhiteOrSimilar(startColor)
+            let isCurrentColored = !isWhiteOrSimilar(currentColor)
+            
+            let shouldInclude = isSimilarToStart || (isStartColored && isCurrentColored)
+            
+            if shouldInclude {
                 mask[y][x] = true
                 
                 stack.append((x+1, y))
@@ -432,6 +446,11 @@ extension ImageProcessor {
                 stack.append((x, y-1))
             }
         }
+    }
+    
+    // 추가 헬퍼 함수
+    private static func isWhiteOrSimilar(_ color: (UInt8, UInt8, UInt8)) -> Bool {
+        return color.0 > 200 && color.1 > 200 && color.2 > 200
     }
     
     private static func drawBrush(pixelData: UnsafeMutablePointer<UInt8>, center: CGPoint,
