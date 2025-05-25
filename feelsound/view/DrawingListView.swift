@@ -11,7 +11,7 @@ struct DrawingListView: View {
     @Environment(\.dismiss) private var dismiss
     
     // 이미지 배열
-    let drawingList: [String] = ["panda", "paint"]
+    let drawingList: [String] = ["panda"]
     
     // 3열 그리드 설정
     let columns = [
@@ -106,11 +106,5 @@ struct DrawingListView: View {
         }
         .background(.black)
         .padding(.bottom, 0)
-    }
-}
-
-struct DrawingListView_Previews: PreviewProvider {
-    static var previews: some View {
-        DrawingListView()
     }
 }

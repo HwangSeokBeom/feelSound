@@ -220,8 +220,9 @@ extension ColoringView {
     private func setupInitialState() {
         if let imageName = imageName, let image = UIImage(named: imageName) {
             let resizedImage = ImageProcessor.resizeImageIfNeeded(image, maxSize: 1000)
-            originalImage = resizedImage
-            floodFillImage = resizedImage
+            let imageWithBackground = ImageProcessor.addWhiteBackground(to: resizedImage) // 흰색 배경 합성
+            originalImage = imageWithBackground
+            floodFillImage = imageWithBackground
         }
     }
     
@@ -379,6 +380,24 @@ extension ImageProcessor {
         return CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
                         bytesPerRow: 4 * width, space: colorSpace,
                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    }
+    
+    // 투명 배경일 때 영역 인식용 흰색 배경 합성
+    static func addWhiteBackground(to image: UIImage) -> UIImage {
+        let size = image.size
+        let rect = CGRect(origin: .zero, size: size)
+        
+        UIGraphicsBeginImageContextWithOptions(size, false, image.scale)
+        defer { UIGraphicsEndImageContext() }
+        
+        // 흰색 배경 그리기
+        UIColor.white.setFill()
+        UIRectFill(rect)
+        
+        // 원본 이미지 그리기
+        image.draw(in: rect)
+        
+        return UIGraphicsGetImageFromCurrentImageContext() ?? image
     }
     
     private static func isValidPoint(x: Int, y: Int, width: Int, height: Int) -> Bool {
@@ -697,11 +716,5 @@ struct RoundedCorner: Shape {
 extension View {
     func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
         clipShape(RoundedCorner(radius: radius, corners: corners))
-    }
-}
-
-struct ColoringView_Previews: PreviewProvider {
-    static var previews: some View {
-        ColoringView(imageName: "panda1")
     }
 }
