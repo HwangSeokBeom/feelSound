@@ -10,6 +10,8 @@ import SwiftUI
 struct ColoringView: View {
     @Environment(\.dismiss) private var dismiss
     
+    let imageName: String?
+    
     // MARK: - State Properties
     @State private var originalImage: UIImage? // 원본 이미지
     @State private var floodFillImage: UIImage?
@@ -29,9 +31,15 @@ struct ColoringView: View {
     private let collapsedPaletteHeight: CGFloat = 80
     private let expandedPaletteHeight: CGFloat = 200
     private let colors: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .pink]
-
     
-    let imageName: String?
+    // MARK: - Pencil Sound
+    @State private var dragOffset: CGSize = .zero
+    @State private var isDragging = false
+    @State private var lastDragTime = Date()
+    @State private var currentVolume: Float = 0.5
+    @StateObject private var synth = PencilSoundSynth()
+
+    private let timer = Timer.publish(every: 0.001, on: .main, in: .common).autoconnect()
     
     var body: some View {
         ZStack {
@@ -46,6 +54,18 @@ struct ColoringView: View {
         }
         .navigationBarHidden(true)
         .onAppear(perform: setupInitialState)
+        .onReceive(timer) { _ in
+            if isDragging {
+                let timeSinceLastMove = Date().timeIntervalSince(lastDragTime)
+                if timeSinceLastMove > 0.05 {
+                    // 멈췄으면 소리 줄이기 (탭 상태 유지)
+                    synth.setVolume(0.01)
+                }
+            } else {
+                // 완전히 터치 종료되면 소리 끄기
+                synth.stop()
+            }
+        }
         .sheet(isPresented: $showingColorPicker) {
             ColorPicker("색상 선택", selection: $selectedColor)
                 .padding()
@@ -224,6 +244,9 @@ extension ColoringView {
             originalImage = imageWithBackground
             floodFillImage = imageWithBackground
         }
+        
+        // 오디오 초기화 - 무음으로 시작
+        synth.stop()
     }
     
     private func handleDrawingStateChanged(_ isCurrentlyDrawing: Bool) {
@@ -232,11 +255,29 @@ extension ColoringView {
         if !isCurrentlyDrawing {
             currentAreaMask = nil
             previousDrawPoint = nil
+            // 드로잉 종료 시 소리도 정지
+            isDragging = false
+            synth.stop()
         }
     }
     
     private func handleDraw(at location: CGPoint) {
         guard let currentImage = floodFillImage, !isProcessing else { return }
+        
+        // 소리 재생 로직 추가
+        if !isDragging {
+            isDragging = true
+            synth.setVolume(0.1) // 초기 탭 볼륨
+        }
+        
+        // 드래그 속도 계산
+        if let prevPoint = previousDrawPoint {
+            let velocity = sqrt(pow(location.x - prevPoint.x, 2) + pow(location.y - prevPoint.y, 2))
+            let adjustedVolume = min(max(0.1 + Float(velocity / 100), 0.05), 0.8)
+            synth.setVolume(adjustedVolume)
+        }
+        
+        lastDragTime = Date()
         
         isProcessing = true
         
