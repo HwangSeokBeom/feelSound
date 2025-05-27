@@ -10,64 +10,61 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var router: Router
     @State var selection: Tab = .home
+    @State private var characterViewID = UUID() // 캐릭터 뷰 식별 ID
 
     var body: some View {
-        NavigationStack(path : $router.navPath){
-            
-            GeometryReader{
-                let safeArea = $0.safeAreaInsets
-                
-                TabView(selection: $selection){
-                    LiquidFlowView()
-                        .tag(Tab.home)
-                    
-                    NatureSoundEffectView()
-                        .tag(Tab.recipe)
-                    
-                    VStack{
-                        Text("sample3")
-                    }
-                        .tag(Tab.search)
-                    
-                    VStack{
-                        Text("sample4")
-                    }
-                        .tag(Tab.shop)
-                    
-                    VStack{
-                        Text("sample5")
-                    }
-                        .tag(Tab.challenge)
+        NavigationStack(path: $router.navPath) {
+            GeometryReader { geometry in
+                ZStack(alignment: .bottom) {
 
-                }
-                .accentColor(Color.primary)
-                .navigationDestination(for: Router.Destination.self) { destination in
-                    switch destination {
-                    case .sampleView1:
-                        TiltDropletView()
-                            .toolbar(.hidden)
+                    // TabView에는 .challenge 제외
+                    if selection != .challenge {
+                        TabView(selection: $selection) {
+                            LiquidFlowView().tag(Tab.home)
+                            NatureSoundEffectView().tag(Tab.recipe)
+                            VStack { Text("sample3") }.tag(Tab.search)
+                            VStack { Text("sample4") }.tag(Tab.shop)
+                            Color.clear.tag(Tab.challenge)
+                        }
+                        .accentColor(.primary)
+                        .navigationBarHidden(true)
+                    }
 
-                    case .sampleView2:
-                        RainFallView()
-                            .toolbar(.hidden)
-                        
-                    case .sampleView3:
-                        FortuneCookieView()
-                            .toolbar(.hidden)
-                        
-                    case .sampleView5:
+                    // challenge 선택 시 CharacterView 렌더링
+                    if selection == .challenge {
                         CharacterView()
-                            .toolbar(.hidden)
+                            .id(characterViewID) // 강제 리렌더링
+                            .transition(.opacity)
+                    }
+
+                    // 하단 탭바
+                    CustomTabBar(selectedTab: $selection)
+                        .frame(height: 100)
+                        .ignoresSafeArea(edges: .bottom)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .animation(.easeInOut, value: selection)
+                .onChange(of: selection) { newTab in
+                    if newTab != .challenge {
+                        characterViewID = UUID() // 캐릭터 뷰 완전 제거 유도
                     }
                 }
-                .navigationBarHidden(true)
-                .overlay(alignment : .bottom){
-                    CustomTabBar(selectedTab: $selection)
+            }
+            .edgesIgnoringSafeArea(.bottom)
+            .navigationDestination(for: Router.Destination.self) { destination in
+                switch destination {
+                case .sampleView1:
+                    TiltDropletView().toolbar(.hidden)
+                case .sampleView2:
+                    RainFallView().toolbar(.hidden)
+                case .sampleView3:
+                    FortuneCookieView().toolbar(.hidden)
+                case .sampleView5:
+                    EmptyView()
                 }
             }
         }
     }
-
 }
 
 

@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		3020E5502DCC1CC500ABBA38 /* Lottie in Frameworks */ = {isa = PBXBuildFile; productRef = 3020E54F2DCC1CC500ABBA38 /* Lottie */; };
+		8BB372072DE052CA00D35084 /* AudioKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8BB372062DE052CA00D35084 /* AudioKit */; };
+		8BB3720A2DE0536000D35084 /* AudioKitEX in Frameworks */ = {isa = PBXBuildFile; productRef = 8BB372092DE0536000D35084 /* AudioKitEX */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +71,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8BB3720A2DE0536000D35084 /* AudioKitEX in Frameworks */,
+				8BB372072DE052CA00D35084 /* AudioKit in Frameworks */,
 				3020E5502DCC1CC500ABBA38 /* Lottie in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -131,6 +135,8 @@
 			name = feelsound;
 			packageProductDependencies = (
 				3020E54F2DCC1CC500ABBA38 /* Lottie */,
+				8BB372062DE052CA00D35084 /* AudioKit */,
+				8BB372092DE0536000D35084 /* AudioKitEX */,
 			);
 			productName = feelsound;
 			productReference = 3020E4922DCC146100ABBA38 /* feelsound.app */;
@@ -216,6 +222,8 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				3020E54E2DCC1C5700ABBA38 /* XCRemoteSwiftPackageReference "lottie-ios" */,
+				8BB372052DE052CA00D35084 /* XCRemoteSwiftPackageReference "AudioKit" */,
+				8BB372082DE0536000D35084 /* XCRemoteSwiftPackageReference "AudioKitEX" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3020E4932DCC146100ABBA38 /* Products */;
@@ -633,6 +641,22 @@
 				minimumVersion = 4.5.1;
 			};
 		};
+		8BB372052DE052CA00D35084 /* XCRemoteSwiftPackageReference "AudioKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/AudioKit/AudioKit";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.6.5;
+			};
+		};
+		8BB372082DE0536000D35084 /* XCRemoteSwiftPackageReference "AudioKitEX" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/AudioKit/AudioKitEX";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.6.2;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -640,6 +664,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 3020E54E2DCC1C5700ABBA38 /* XCRemoteSwiftPackageReference "lottie-ios" */;
 			productName = Lottie;
+		};
+		8BB372062DE052CA00D35084 /* AudioKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8BB372052DE052CA00D35084 /* XCRemoteSwiftPackageReference "AudioKit" */;
+			productName = AudioKit;
+		};
+		8BB372092DE0536000D35084 /* AudioKitEX */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8BB372082DE0536000D35084 /* XCRemoteSwiftPackageReference "AudioKitEX" */;
+			productName = AudioKitEX;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

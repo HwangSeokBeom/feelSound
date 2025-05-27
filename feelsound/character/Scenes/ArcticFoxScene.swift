@@ -18,6 +18,11 @@ class ArcticFoxScene: SKScene {
     private var foxState: FoxState = .idle
     private var lastDirection: Direction? = nil
     
+    //private var emotionAnalyzer = AudioEmotionAnalyzer()
+    var isEmotionListening: Bool = false
+    var isEmotionActing: Bool = false
+    var lastEmotion: String? = nil
+    
     enum FoxState {
         case idle, walking(Direction), resting(Int)
     }
@@ -53,8 +58,11 @@ class ArcticFoxScene: SKScene {
         var turnLeftToFront: [SKTexture] = []
         var turnFrontToRight: [SKTexture] = []
         var turnFrontToLeft: [SKTexture] = []
+        var turnLeftToBack: [SKTexture] = []
+        var turnBackToLeft: [SKTexture] = []
         var liftHead: [SKTexture] = []
         var sniffing: [SKTexture] = []
+        var defaultTexture: [SKTexture] = []
     }
     
     private var textures = FoxTextures()
@@ -65,15 +73,16 @@ class ArcticFoxScene: SKScene {
         loadTextures()
         setupFox()
         setupAudio()
+        //emotionAnalyzer.delegate = self
+       //emotionAnalyzer.start()
     }
     
+    deinit {
+        foxAudioEngine?.stop()
+    }
+
     private func setupAudio() {
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            print("❌ AVAudioSession 설정 실패: \(error)")
-        }
+        AudioSessionManager.shared.configureSessionForPlayback()
 
         foxAudioEngine = AVAudioEngine()
         audioPlayer = AVAudioPlayerNode()
@@ -91,9 +100,7 @@ class ArcticFoxScene: SKScene {
         footstepBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)
         try? file.read(into: footstepBuffer!)
 
-        // 🔄 outputNode로 연결
         foxAudioEngine!.connect(audioPlayer, to: foxAudioEngine!.outputNode, format: format)
-
         audioPlayer.volume = 1.0
 
         do {
@@ -124,7 +131,7 @@ class ArcticFoxScene: SKScene {
     }
     
     private func setupBackground() {
-        let background = SKSpriteNode(imageNamed: "북극여우_배경")
+        let background = SKSpriteNode(imageNamed: "홈")
         background.position = CGPoint(x: size.width / 2, y: size.height / 2)
         background.zPosition = -10
         background.size = size
@@ -141,6 +148,8 @@ class ArcticFoxScene: SKScene {
         textures.turnLeftToFront = loadSequence("왼쪽으로_걷다가_정면_보기_", count: 6)
         textures.turnFrontToRight = textures.turnRightToFront.reversed()
         textures.turnFrontToLeft = textures.turnLeftToFront.reversed()
+        textures.turnLeftToBack = loadSequence("왼쪽_보다_뒤돌아보기_", count: 6)
+        textures.turnBackToLeft = textures.turnLeftToBack.reversed()
         textures.tail = loadSequence("꼬리흔들기_", count: 6)
         textures.sniff = loadSequence("코_냄새_맡기_", count: 2)
         textures.sniffLeft = loadSequence("왼쪽으로_걷다가_코_냄새맡기_", count: 2)
@@ -153,6 +162,7 @@ class ArcticFoxScene: SKScene {
         textures.jump = loadSequence("점프_", count: 6)
         textures.liftHead = loadSequence("고개_들기_", count: 6)
         textures.sniffing = loadSequence("냄새_맡기_", count: 6)
+        textures.defaultTexture = [SKTexture(imageNamed: "기준")]
     }
     
     private func loadSequence(_ prefix: String, count: Int) -> [SKTexture] {
@@ -160,8 +170,8 @@ class ArcticFoxScene: SKScene {
     }
     
     private func setupFox() {
-        foxNode = SKSpriteNode(texture: textures.back.first)
-        foxNode.position = CGPoint(x: size.width * 0.5, y: size.height * 0.3)
+        foxNode = SKSpriteNode(texture: textures.defaultTexture.first) // 👈 초기 텍스처를 기준으로 설정
+        foxNode.position = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
         foxNode.zPosition = 1
         foxNode.size = CGSize(width: 80, height: 80)
         addChild(foxNode)
@@ -169,6 +179,13 @@ class ArcticFoxScene: SKScene {
     }
     
     private func startWalking() {
+        guard !isEmotionListening else {
+            print("🎙 녹음 중 → 걷기 중단")
+            foxNode.removeAllActions()
+            foxState = .idle
+            foxNode.texture = textures.defaultTexture.first // 👈 기준 텍스처 고정
+            return
+        }
         let possibleDirections = availableDirections()
         guard let direction = possibleDirections.randomElement() else {
             scheduleNextWalk()
@@ -291,17 +308,27 @@ class ArcticFoxScene: SKScene {
                 return [SKAction.animate(with: textures.turnFrontToRight, timePerFrame: 0.1)]
             case (.front, .left):
                 return [SKAction.animate(with: textures.turnFrontToLeft, timePerFrame: 0.1)]
+            case (.left, .back):
+                return [SKAction.animate(with: textures.turnLeftToBack, timePerFrame: 0.1)]
+            case (.back, .left):
+                return [SKAction.animate(with: textures.turnBackToLeft, timePerFrame: 0.1)]
+            case (.right, .left):
+                return [
+                    SKAction.animate(with: textures.turnRightToFront, timePerFrame: 0.1),
+                    SKAction.wait(forDuration: 0.1),
+                    SKAction.animate(with: textures.turnFrontToLeft, timePerFrame: 0.1)
+                ]
             case (.left, .right):
                 return [
                     SKAction.animate(with: textures.turnLeftToFront, timePerFrame: 0.1),
                     SKAction.wait(forDuration: 0.1),
                     SKAction.animate(with: textures.turnFrontToRight, timePerFrame: 0.1)
                 ]
-            case (.right, .left):
+            case (.back, .front):
                 return [
-                    SKAction.animate(with: textures.turnRightToFront, timePerFrame: 0.1),
+                    SKAction.animate(with: textures.turnBackToLeft, timePerFrame: 0.1),
                     SKAction.wait(forDuration: 0.1),
-                    SKAction.animate(with: textures.turnFrontToLeft, timePerFrame: 0.1)
+                    SKAction.animate(with: textures.turnLeftToFront, timePerFrame: 0.1)
                 ]
             default:
                 return []
@@ -483,6 +510,13 @@ class ArcticFoxScene: SKScene {
     }
     
     private func scheduleNextWalk() {
+        guard !isEmotionListening else {
+            print("🎙 녹음 중 → 다음 행동 대기 중단")
+            foxNode.removeAllActions()
+            foxNode.texture = textures.defaultTexture.first // 👈 기준 텍스처 고정
+            return
+        }
+
         run(.sequence([
             .wait(forDuration: .random(in: 0.5...2.0)),
             .run { self.startWalking() }
@@ -532,4 +566,77 @@ extension Array {
     subscript(safe index: Int) -> Element? {
         return indices.contains(index) ? self[index] : nil
     }
+}
+
+extension ArcticFoxScene {
+    private var currentTime: TimeInterval {
+        return CACurrentMediaTime()
+    }
+
+    private static var emotionCooldown: TimeInterval = 5.0
+    private var emotionGapSatisfied: Bool {
+        if let last = lastEmotionTime {
+            return (currentTime - last) > ArcticFoxScene.emotionCooldown
+        }
+        return true
+    }
+
+    private var lastEmotionTime: TimeInterval? {
+        get { UserDefaults.standard.double(forKey: "lastEmotionTime") }
+        set { UserDefaults.standard.set(newValue, forKey: "lastEmotionTime") }
+    }
+
+    func performAction(for emotion: String) {
+        print("⚡ 감정 동작 요청됨: \(emotion), 현재 acting: \(isEmotionActing), 이전 감정: \(lastEmotion ?? "없음")")
+
+        guard emotion != lastEmotion || emotionGapSatisfied else {
+            print("⏸ 동일 감정 반복 차단 (cooldown 적용)")
+            return
+        }
+
+        lastEmotion = emotion
+        lastEmotionTime = currentTime
+        isEmotionActing = true
+
+        foxNode.removeAllActions()
+        if let defaultTex = textures.defaultTexture.first {
+            foxNode.texture = defaultTex
+        }
+
+        let delay = SKAction.wait(forDuration: 0.2)
+        let actionRun = SKAction.run { [weak self] in
+            guard let self = self else { return }
+
+            print("🎬 감정 애니메이션 실행: \(emotion)")
+            switch emotion {
+            case "happy": self.enterTailWaggingState()
+            case "sad": self.enterRestingState()
+            case "angry": self.enterJumpingState()
+            case "neutral": self.enterRestingState()
+            default:
+                print("⚠️ 정의되지 않은 감정: \(emotion)")
+                self.isEmotionActing = false
+            }
+        }
+
+        let finish = SKAction.sequence([
+            .wait(forDuration: 5.0),
+            .run { [weak self] in
+                self?.isEmotionActing = false
+                self?.scheduleNextWalk()  // ✅ 감정 행동 후에도 녹음 상태 유지
+            }
+        ])
+
+        run(.sequence([delay, actionRun]), withKey: "emotionAction")
+        run(finish, withKey: "emotionFinish")
+    }
+    
+    func updateFoxForListeningState() {
+            if isEmotionListening {
+                print("🎙 녹음 중 → 모든 동작 중단 및 기준 텍스처 고정")
+                foxNode.removeAllActions()
+                foxNode.texture = textures.defaultTexture.first
+                foxState = .idle
+            }
+        }
 }
