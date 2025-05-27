@@ -18,7 +18,7 @@ struct ImageProcessor {
         let scale = maxSize / maxDimension
         let newSize = CGSize(width: size.width * scale, height: size.height * scale)
         
-        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+        UIGraphicsBeginImageContextWithOptions(newSize, false, image.scale)//1.0)
         defer { UIGraphicsEndImageContext() }
         image.draw(in: CGRect(origin: .zero, size: newSize))
         return UIGraphicsGetImageFromCurrentImageContext() ?? image
@@ -148,9 +148,9 @@ extension ImageProcessor {
         return max(6, Int(maxDimension / 120))
     }
     
-    private static func createImageFromContext(_ context: CGContext) -> UIImage? {
+    private static func createImageFromContext(_ context: CGContext, scale: CGFloat = 1.0) -> UIImage? {//) -> UIImage? {
         guard let cgImage = context.makeImage() else { return nil }
-        return UIImage(cgImage: cgImage)
+        return UIImage(cgImage: cgImage, scale: scale, orientation: .up) // 🟢 scale 정보 추가)
     }
     
     private static func floodFill(mask: inout [[Bool]], pixelData: UnsafeMutablePointer<UInt8>,
