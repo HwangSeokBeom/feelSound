@@ -92,7 +92,11 @@ struct CharacterView: View {
                         Button(action: {
                             recognizer.toggleRecording()
                             scene.isEmotionListening = recognizer.isListening  // 녹음 상태 전달
-                            scene.updateFoxForListeningState()                // 여우 상태 즉시 반영
+                            scene.updateFoxForListeningState()                 // 여우 상태 즉시 반영
+
+                            if !recognizer.isListening {
+                                recognizer.recognizedText = ""                // 🔸 녹음 중지 시 텍스트 초기화
+                            }
                         }) {
                             Text(recognizer.isListening ? "Stop Listening" : "Sound")
                                 .frame(maxWidth: .infinity)

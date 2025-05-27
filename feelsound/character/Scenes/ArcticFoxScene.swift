@@ -632,11 +632,16 @@ extension ArcticFoxScene {
     }
     
     func updateFoxForListeningState() {
-            if isEmotionListening {
-                print("🎙 녹음 중 → 모든 동작 중단 및 기준 텍스처 고정")
-                foxNode.removeAllActions()
-                foxNode.texture = textures.defaultTexture.first
-                foxState = .idle
-            }
+        if isEmotionListening {
+            print("🎙 녹음 중 → 모든 동작 중단 및 기준 텍스처 고정")
+            foxNode.removeAllActions()
+            foxNode.texture = textures.defaultTexture.first
+            foxState = .idle
+        } else {
+            print("🎤 녹음 종료 → 여우 자유 상태 복귀")
+            isEmotionActing = false
+            lastEmotion = nil
+            scheduleNextWalk() // 🟢 다시 걷기 시작
         }
+    }
 }
