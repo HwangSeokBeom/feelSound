@@ -1,13 +1,13 @@
 //
-//  Untitled.swift
+//  SpeechRecognizer.swift
 //  feelsound
 //
 //  Created by Hwangseokbeom on 5/27/25.
 //
 
 import Foundation
-import Speech
 import AVFoundation
+import Speech
 
 class SpeechRecognizer: NSObject, ObservableObject {
     private let engine = AVAudioEngine()
@@ -20,17 +20,44 @@ class SpeechRecognizer: NSObject, ObservableObject {
     @Published var recognizedText = ""
     @Published var isListening = false
 
-    func requestPermission() {
-        SFSpeechRecognizer.requestAuthorization { status in
-            print(status == .authorized ? "✅ 음성 인식 권한 허용됨" : "❌ 음성 인식 권한 거부됨")
-        }
+    private var lastVoiceDetectedTime: TimeInterval = CACurrentMediaTime()
+    private let silenceTimeout: TimeInterval = 5.0
+    private var silenceCheckTimer: Timer?
 
-        AVAudioSession.sharedInstance().requestRecordPermission { granted in
-            print(granted ? "🎤 마이크 권한 허용됨" : "🚫 마이크 권한 거부됨")
+    // MARK: - 권한 요청 + 녹음 시작
+    func requestPermissionAndStart() {
+        SFSpeechRecognizer.requestAuthorization { status in
+            DispatchQueue.main.async {
+                if status == .authorized {
+                    print("✅ 음성 인식 권한 허용됨")
+                    self.requestMicPermissionAndStart()
+                } else {
+                    print("❌ 음성 인식 권한 거부됨")
+                }
+            }
         }
     }
 
+    private func requestMicPermissionAndStart() {
+        AVAudioSession.sharedInstance().requestRecordPermission { granted in
+            DispatchQueue.main.async {
+                if granted {
+                    print("🎤 마이크 권한 허용됨")
+                    self.startRecording()
+                } else {
+                    print("🚫 마이크 권한 거부됨")
+                }
+            }
+        }
+    }
+
+    // MARK: - 녹음 시작
     func startRecording() {
+        guard let speechRecognizer = speechRecognizer, speechRecognizer.isAvailable else {
+            print("❌ SFSpeechRecognizer 사용 불가 또는 인식기 없음")
+            return
+        }
+
         if engine.isRunning {
             print("⚠️ AVAudioEngine 이미 실행 중")
             return
@@ -38,8 +65,8 @@ class SpeechRecognizer: NSObject, ObservableObject {
 
         stopRecording()
         recognizedText = ""
-        isListening = true
 
+        // 세션 설정
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .mixWithOthers])
@@ -61,30 +88,37 @@ class SpeechRecognizer: NSObject, ObservableObject {
             self.recognitionRequest?.append(buffer)
         }
 
+        // 엔진 시작
         do {
             engine.prepare()
             try engine.start()
             print("🎤 AVAudioEngine 시작됨")
+            startSilenceMonitor()
+        } catch {
+            print("❌ AVAudioEngine 시작 실패: \(error.localizedDescription)")
+            stopRecording()
+            return
+        }
 
-            recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { result, error in
+        // 음성 인식 시작
+        DispatchQueue.main.async {
+            self.recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { result, error in
                 if let result = result {
                     let text = result.bestTranscription.formattedString
                     DispatchQueue.main.async {
                         self.recognizedText = text
-                        print("📝 인식된 텍스트: \(text)")
+                        self.lastVoiceDetectedTime = CACurrentMediaTime()
+
+                        if !self.isListening {
+                            self.isListening = true
+                            self.foxScene?.isEmotionListening = true
+                            self.foxScene?.updateFoxForListeningState()
+                        }
                     }
 
                     let emotion = self.analyzeEmotion(from: text)
-                    print("📤 분석된 감정: \(emotion)")
-
-                    // ✅ 명확히 전달 여부 로그
                     if emotion != "neutral", let fox = self.foxScene {
-                        print("🎯 전달 시도 - 감정: \(emotion), 현재 acting: \(fox.isEmotionActing), 이전 감정: \(fox.lastEmotion ?? "없음")")
                         fox.performAction(for: emotion)
-                    }
-
-                    if result.isFinal {
-                        self.stopRecording()
                     }
                 }
 
@@ -93,13 +127,32 @@ class SpeechRecognizer: NSObject, ObservableObject {
                     self.stopRecording()
                 }
             }
-
-        } catch {
-            print("❌ startRecording 오류: \(error.localizedDescription)")
-            stopRecording()
         }
     }
 
+    // MARK: - 무음 모니터링
+    private func startSilenceMonitor() {
+        silenceCheckTimer?.invalidate()
+        silenceCheckTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            let now = CACurrentMediaTime()
+            if self.isListening && (now - self.lastVoiceDetectedTime > self.silenceTimeout) {
+                print("🔇 무음 지속 감지 → 듣기 종료")
+                self.isListening = false
+                DispatchQueue.main.async {
+                    self.foxScene?.isEmotionListening = false
+                    self.foxScene?.updateFoxForListeningState()
+                    self.recognizedText = ""
+                }
+            }
+        }
+    }
+
+    private func stopSilenceMonitor() {
+        silenceCheckTimer?.invalidate()
+        silenceCheckTimer = nil
+    }
+
+    // MARK: - 녹음 중지
     func stopRecording() {
         isListening = false
 
@@ -107,6 +160,8 @@ class SpeechRecognizer: NSObject, ObservableObject {
         engine.stop()
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()
+
+        stopSilenceMonitor()
 
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -117,28 +172,17 @@ class SpeechRecognizer: NSObject, ObservableObject {
         print("🛑 녹음 중지됨")
     }
 
-    func toggleRecording() {
-        isListening ? stopRecording() : startRecording()
-    }
-
+    // MARK: - 키워드 기반 감정 분석
     func analyzeEmotion(from text: String) -> String {
         let lowered = text.lowercased()
-        
+
         let emotionKeywords: [(keyword: String, emotion: String)] = [
-            ("기뻐", "happy"),
-            ("좋아", "happy"),
-            ("행복", "happy"),
-            ("슬퍼", "sad"),
-            ("우울", "sad"),
-            ("눈물", "sad"),
-            ("화나", "angry"),
-            ("짜증", "angry"),
-            ("분노", "angry"),
-            ("놀라", "surprised"),
-            ("헉", "surprised"),
-            ("어머", "surprised")
+            ("기뻐", "happy"), ("좋아", "happy"), ("행복", "happy"),
+            ("슬퍼", "sad"), ("우울", "sad"), ("눈물", "sad"),
+            ("화나", "angry"), ("짜증", "angry"), ("분노", "angry"),
+            ("놀라", "surprised"), ("헉", "surprised"), ("어머", "surprised")
         ]
-        
+
         var latestEmotion: String? = nil
         var latestRangeLocation = -1
 

@@ -1,5 +1,5 @@
 //
-//  ContentView.swift
+//  CharacterView.swift
 //  MovingCharacter
 //
 //  Created by Hwangseokbeom on 5/7/25.
@@ -13,11 +13,13 @@ struct CharacterView: View {
     @State private var isSheetVisible = true
     @State private var isSoundOn = true
     @StateObject private var recognizer = SpeechRecognizer()
+    
     let scene = ArcticFoxScene()
 
     var body: some View {
         GeometryReader { geometry in
             ZStack {
+                // SpriteKit 장면
                 SpriteView(scene: scene)
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .onAppear {
@@ -25,12 +27,11 @@ struct CharacterView: View {
                         scene.scaleMode = .resizeFill
                         scene.isPaused = false
 
-                        // 🔗 연결 (필요 시 foxScene 프로퍼티 선언)
-                        // scene.foxScene = scene ← 선언되어 있지 않으면 주석처리 또는 제거
                         recognizer.foxScene = scene
-                        recognizer.requestPermission()
+                        recognizer.requestPermissionAndStart()  // ✅ 권한 요청 + 인식 시작
                     }
 
+                // 상단 인삿말 + 사운드 버튼
                 VStack {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -58,10 +59,12 @@ struct CharacterView: View {
                     Spacer()
                 }
 
+                // 하단 반모달 제어 영역
                 VStack {
                     Spacer()
 
                     VStack(spacing: 24) {
+                        // 위로 당기기 캡슐
                         Capsule()
                             .frame(width: 36, height: 4)
                             .foregroundColor(.gray.opacity(0.6))
@@ -69,8 +72,11 @@ struct CharacterView: View {
                                 withAnimation { isSheetVisible.toggle() }
                             }
 
+                        // 기능 버튼
                         HStack(spacing: 20) {
-                            Button(action: {}) {
+                            Button(action: {
+                                // TODO: Focus 기능 구현
+                            }) {
                                 Text("Focus")
                                     .frame(maxWidth: .infinity)
                                     .padding()
@@ -79,7 +85,9 @@ struct CharacterView: View {
                                     .cornerRadius(12)
                             }
 
-                            Button(action: {}) {
+                            Button(action: {
+                                // TODO: Reset 기능 구현
+                            }) {
                                 Text("Reset")
                                     .frame(maxWidth: .infinity)
                                     .padding()
@@ -89,25 +97,17 @@ struct CharacterView: View {
                             }
                         }
 
-                        Button(action: {
-                            recognizer.toggleRecording()
-                            scene.isEmotionListening = recognizer.isListening  // 녹음 상태 전달
-                            scene.updateFoxForListeningState()                 // 여우 상태 즉시 반영
+                        // 음성 인식 상태 표시
+                        Text(recognizer.isListening ? "Listening..." : "Silent")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color(hex: "#2E2E3E"))
+                            .foregroundColor(recognizer.isListening ? .green : .gray)
+                            .cornerRadius(12)
 
-                            if !recognizer.isListening {
-                                recognizer.recognizedText = ""                // 🔸 녹음 중지 시 텍스트 초기화
-                            }
-                        }) {
-                            Text(recognizer.isListening ? "Stop Listening" : "Sound")
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color(hex: "#2E2E3E"))
-                                .foregroundColor(.white)
-                                .cornerRadius(12)
-                        }
-
+                        // 인식된 텍스트 표시
                         if !recognizer.recognizedText.isEmpty {
-                            Text("\u{1F50A} \(recognizer.recognizedText)") // 이모지 수정됨
+                            Text("🔊 \(recognizer.recognizedText)")
                                 .foregroundColor(.yellow)
                                 .font(.caption)
                                 .padding(.top, 4)
@@ -125,9 +125,11 @@ struct CharacterView: View {
             .edgesIgnoringSafeArea(.top)
             .navigationBarHidden(true)
             .onDisappear {
+                // 정리
                 scene.removeAllChildren()
                 scene.removeAllActions()
                 scene.isPaused = true
+                recognizer.stopRecording()
             }
         }
     }

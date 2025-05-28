@@ -9,34 +9,37 @@ import SpriteKit
 import AVFoundation
 
 class ArcticFoxScene: SKScene {
-    
+
     private var foxAudioEngine: AVAudioEngine?
     private var audioPlayer: AVAudioPlayerNode!
     private var footstepBuffer: AVAudioPCMBuffer?
-    
+
     private var foxNode: SKSpriteNode!
     private var foxState: FoxState = .idle
     private var lastDirection: Direction? = nil
-    
-    //private var emotionAnalyzer = AudioEmotionAnalyzer()
-    var isEmotionListening: Bool = false
+
+    var isEmotionListening: Bool = false {
+        didSet {
+            updateFoxForListeningState()
+        }
+    }
     var isEmotionActing: Bool = false
     var lastEmotion: String? = nil
-    
+
     enum FoxState {
         case idle, walking(Direction), resting(Int)
     }
-    
+
     enum Direction: CaseIterable {
         case front, back, left, right
     }
-    
+
     enum CharacterFacingState {
         case normal     // 정면
         case left
         case right
     }
-    
+
     // MARK: - Texture Groups
     private struct FoxTextures {
         var tail: [SKTexture] = []
@@ -64,21 +67,36 @@ class ArcticFoxScene: SKScene {
         var sniffing: [SKTexture] = []
         var defaultTexture: [SKTexture] = []
     }
-    
+
     private var textures = FoxTextures()
-    
-    // MARK: - Scene Lifecycle
+
     override func didMove(to view: SKView) {
         setupBackground()
         loadTextures()
         setupFox()
         setupAudio()
-        //emotionAnalyzer.delegate = self
-       //emotionAnalyzer.start()
     }
-    
+
     deinit {
         foxAudioEngine?.stop()
+    }
+
+    func updateFoxForListeningState() {
+        if isEmotionListening {
+            if !isEmotionActing {
+                print("🎙 녹음 중 (idle) → 기준 텍스처 유지")
+                foxNode.removeAllActions()
+                foxNode.texture = textures.defaultTexture.first
+                foxState = .idle
+            } else {
+                print("🎙 녹음 중 (감정 반응 중) → 행동 유지")
+            }
+        } else {
+            print("🎤 녹음 종료 → 여우 자유 상태 복귀")
+            isEmotionActing = false
+            lastEmotion = nil
+            scheduleNextWalk()
+        }
     }
 
     private func setupAudio() {
@@ -631,17 +649,17 @@ extension ArcticFoxScene {
         run(finish, withKey: "emotionFinish")
     }
     
-    func updateFoxForListeningState() {
-        if isEmotionListening {
-            print("🎙 녹음 중 → 모든 동작 중단 및 기준 텍스처 고정")
-            foxNode.removeAllActions()
-            foxNode.texture = textures.defaultTexture.first
-            foxState = .idle
-        } else {
-            print("🎤 녹음 종료 → 여우 자유 상태 복귀")
-            isEmotionActing = false
-            lastEmotion = nil
-            scheduleNextWalk() // 🟢 다시 걷기 시작
-        }
-    }
+//    func updateFoxForListeningState() {
+//        if isEmotionListening {
+//            print("🎙 녹음 중 → 모든 동작 중단 및 기준 텍스처 고정")
+//            foxNode.removeAllActions()
+//            foxNode.texture = textures.defaultTexture.first
+//            foxState = .idle
+//        } else {
+//            print("🎤 녹음 종료 → 여우 자유 상태 복귀")
+//            isEmotionActing = false
+//            lastEmotion = nil
+//            scheduleNextWalk() // 🟢 다시 걷기 시작
+//        }
+//    }
 }
