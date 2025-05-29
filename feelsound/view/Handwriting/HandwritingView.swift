@@ -20,7 +20,7 @@ struct HandwritingView: View {
     @State private var isDrawing = false
     @StateObject private var synth = PencilSoundSynth()
     
-    private let inputText = "안녕하세요"
+    let inputText: String
     private let fixedImageSize = UIScreen.main.bounds.width
     
     var body: some View {
@@ -63,18 +63,17 @@ struct HandwritingView: View {
                     onDraw: handleDraw,
                     onDrawingStateChanged: handleDrawingStateChanged
                 )
-                .frame(width: fixedImageSize, height: fixedImageSize)
+                .frame(width: fixedImageSize, height: UIScreen.main.bounds.height)  // 높이를 화면 전체로
                 .background(Color.white)
                 .clipped()
             } else {
                 Color.clear
-                    .frame(width: fixedImageSize, height: fixedImageSize)
+                    .frame(width: fixedImageSize, height: UIScreen.main.bounds.height)  // 높이를 화면 전체로
                     .background(Color.white)
                     .onAppear {
                         generateImage(words: inputText)
                     }
             }
-            Spacer()
         }
         .padding(.top, 40)
         .background(Color.gray)
@@ -87,19 +86,18 @@ struct HandwritingView: View {
     
     private func generateImage(words: String) {
         if let textImage = createTextImage(text: words) {
-            let imageWithBackground = ImageProcessor.addWhiteBackground(to: textImage)
+            let imageWithBackground = HandwritingProcessor.addWhiteBackground(to: textImage)
             originalImage = imageWithBackground
             floodFillImage = imageWithBackground
         }
     }
     
     private func createTextImage(text: String) -> UIImage? {
-        let imageSize = CGSize(width: fixedImageSize, height: fixedImageSize)
-        let maxFontSize: CGFloat = 180
-        let minFontSize: CGFloat = 12
-        let padding: CGFloat = 30
+        let imageSize = CGSize(width: fixedImageSize, height: UIScreen.main.bounds.height)
+        let maxFontSize: CGFloat = 300  // 최대 폰트 크기
+        let minFontSize: CGFloat = 20   // 최소 폰트 크기
+        let padding: CGFloat = 40
         let scale: CGFloat = 1.0
-        
         var bestFontSize = maxFontSize
         
         // 최적 폰트 크기 찾기
@@ -203,27 +201,27 @@ struct HandwritingView: View {
         let uiColor = UIColor(selectedColor)
         
         if isDrawing && currentAreaMask == nil {
-            let (mask, _) = ImageProcessor.createAreaMask(image: originalImage ?? image, at: location)
+            let (mask, _) = HandwritingProcessor.createAreaMask(image: originalImage ?? image, at: location)
             currentAreaMask = mask
-            let result = ImageProcessor.drawColor(image: image, at: location, with: uiColor, areaMask: mask)
+            let result = HandwritingProcessor.drawColor(image: image, at: location, with: uiColor, areaMask: mask, fontSize: 100)
             previousDrawPoint = location
             return result
         } else if let previousPoint = previousDrawPoint {
-            let result = ImageProcessor.drawLine(
+            let result = HandwritingProcessor.drawLine(
                 image: image,
                 from: previousPoint,
                 to: location,
                 with: uiColor,
-                areaMask: currentAreaMask
+                areaMask: currentAreaMask, fontSize: 100
             )
             previousDrawPoint = location
             return result
         } else {
-            let result = ImageProcessor.drawColor(
+            let result = HandwritingProcessor.drawColor(
                 image: image,
                 at: location,
                 with: uiColor,
-                areaMask: currentAreaMask
+                areaMask: currentAreaMask, fontSize: 100
             )
             previousDrawPoint = location
             return result

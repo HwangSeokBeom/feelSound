@@ -199,12 +199,13 @@ struct HandwritingListView: View {
             } else {
                 List {
                     ForEach(Array(filteredQuotes.enumerated()), id: \.element.id) { index, quote in
-                        QuoteCardView(quote: quote)
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
+                        NavigationLink(destination: HandwritingView(inputText: quote.quoteText)) {
+                            QuoteCardView(quote: quote)
+                        }
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                     }
                 }
-                .listStyle(PlainListStyle())
             }
         }
         .navigationBarHidden(true)
