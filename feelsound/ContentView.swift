@@ -58,6 +58,10 @@ struct ContentView: View {
                     case .coloring:
                         DrawingListView()
                             .toolbar(.hidden)
+                        
+                    case .handwriting:
+                        HandwritingListView()
+                            .toolbar(.hidden)
                     }
                     
                 }

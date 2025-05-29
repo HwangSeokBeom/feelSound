@@ -14,6 +14,7 @@ final class Router: ObservableObject {
         case sampleView2
         case sampleView3
         case coloring
+        case handwriting
     }
     
     @Published var navPath = NavigationPath()

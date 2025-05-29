@@ -281,6 +281,14 @@ struct LiquidFlowView: View {
                                 .foregroundColor(.white)
 
                         }
+                        
+                        Button {
+                            router.navigate(to: .handwriting)
+                        } label: {
+                            Text("HandwritingView")
+                                .foregroundColor(.white)
+
+                        }
                     }
                 }
                 
