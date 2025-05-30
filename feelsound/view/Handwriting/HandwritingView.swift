@@ -18,7 +18,9 @@ struct HandwritingView: View {
     @State private var previousDrawPoint: CGPoint?
     @State private var isProcessing = false
     @State private var isDrawing = false
+    @State private var brushSize: CGFloat = 100
     @StateObject private var synth = PencilSoundSynth()
+    
     
     let inputText: String
     private let fixedImageSize = UIScreen.main.bounds.width
@@ -145,7 +147,6 @@ struct HandwritingView: View {
             return nil
         }
         
-        // 검은색 배경
         context.setFillColor(UIColor.black.cgColor)
         context.fill(CGRect(origin: .zero, size: imageSize))
         
@@ -200,10 +201,16 @@ struct HandwritingView: View {
     private func processDrawing(at location: CGPoint, on image: UIImage) -> UIImage {
         let uiColor = UIColor(selectedColor)
         
+        // 글자 영역인지 확인 (흰색 픽셀인지 체크)
+        guard let originalImage = originalImage,
+              isColorableArea(at: location, in: originalImage) else {
+            return image // 글자 영역이면 색칠하지 않고 원본 이미지 반환
+        }
+        
         if isDrawing && currentAreaMask == nil {
-            let (mask, _) = HandwritingProcessor.createAreaMask(image: originalImage ?? image, at: location)
+            let (mask, _) = HandwritingProcessor.createAreaMask(image: originalImage, at: location)
             currentAreaMask = mask
-            let result = HandwritingProcessor.drawColor(image: image, at: location, with: uiColor, areaMask: mask, fontSize: 100)
+            let result = HandwritingProcessor.drawColor(image: image, at: location, with: uiColor, areaMask: mask, fontSize: brushSize)
             previousDrawPoint = location
             return result
         } else if let previousPoint = previousDrawPoint {
@@ -212,7 +219,8 @@ struct HandwritingView: View {
                 from: previousPoint,
                 to: location,
                 with: uiColor,
-                areaMask: currentAreaMask, fontSize: 100
+                areaMask: currentAreaMask,
+                fontSize: brushSize
             )
             previousDrawPoint = location
             return result
@@ -221,11 +229,42 @@ struct HandwritingView: View {
                 image: image,
                 at: location,
                 with: uiColor,
-                areaMask: currentAreaMask, fontSize: 100
+                areaMask: currentAreaMask,
+                fontSize: brushSize
             )
             previousDrawPoint = location
             return result
         }
+    }
+    
+    private func isColorableArea(at point: CGPoint, in image: UIImage) -> Bool {
+        guard let cgImage = image.cgImage else { return false }
+        
+        let width = cgImage.width
+        let height = cgImage.height
+        
+        let x = Int(point.x)
+        let y = Int(point.y)
+        
+        // 범위 체크
+        guard x >= 0, x < width, y >= 0, y < height else { return false }
+        
+        // 이미지 데이터 추출
+        guard let dataProvider = cgImage.dataProvider,
+              let data = dataProvider.data,
+              let bytes = CFDataGetBytePtr(data) else { return false }
+        
+        let bytesPerPixel = 4
+        let bytesPerRow = bytesPerPixel * width
+        let pixelOffset = (y * bytesPerRow) + (x * bytesPerPixel)
+        
+        let red = bytes[pixelOffset]
+        let green = bytes[pixelOffset + 1]
+        let blue = bytes[pixelOffset + 2]
+        
+        // 흰색 픽셀(글자)인지 확인 - 글자 부분만 색칠 가능
+        let threshold: UInt8 = 200
+        return red >= threshold && green >= threshold && blue >= threshold
     }
 }
 
@@ -269,10 +308,10 @@ struct FixedSizeImageView: UIViewRepresentable {
             
             let location = gesture.location(in: imageView)
             
-            // 좌표를 이미지 크기에 맞게 조정
+            // 좌표를 이미지 크기에 맞게 조정 - 수정된 부분
             let adjustedLocation = CGPoint(
-                x: location.x * (parent.image.size.width / parent.fixedSize),
-                y: location.y * (parent.image.size.height / parent.fixedSize)
+                x: location.x * (parent.image.size.width / imageView.bounds.width),
+                y: location.y * (parent.image.size.height / imageView.bounds.height)
             )
             
             switch gesture.state {
