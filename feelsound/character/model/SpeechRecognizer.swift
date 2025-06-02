@@ -14,6 +14,7 @@ class SpeechRecognizer: NSObject, ObservableObject {
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "ko-KR"))
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
+    private let emotionAnalyzer = EmotionAnalyzer()
 
     weak var foxScene: ArcticFoxScene?
 
