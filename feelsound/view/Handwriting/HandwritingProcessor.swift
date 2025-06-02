@@ -61,7 +61,7 @@ struct HandwritingProcessor {
         var stack = [(startX, startY)]
         var visited = Array(repeating: Array(repeating: false, count: width), count: height)
         
-        let tolerance: Int = 15 // 색상 허용 오차를 줄여서 더 정확한 마스크 생성
+        let tolerance: Int = 25 // 15 -> 25로 증가하여 더 관대하게 영역 인식
         
         while !stack.isEmpty {
             let (x, y) = stack.removeLast()

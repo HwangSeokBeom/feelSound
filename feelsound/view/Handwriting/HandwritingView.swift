@@ -262,9 +262,33 @@ struct HandwritingView: View {
         let green = bytes[pixelOffset + 1]
         let blue = bytes[pixelOffset + 2]
         
-        // 흰색 픽셀(글자)인지 확인 - 글자 부분만 색칠 가능
-        let threshold: UInt8 = 200
-        return red >= threshold && green >= threshold && blue >= threshold
+        // 개선된 threshold - 더 관대한 값으로 변경하고 주변 픽셀도 체크
+        let threshold: UInt8 = 150  // 200 -> 150으로 변경
+        let isMainPixelColorable = red >= threshold && green >= threshold && blue >= threshold
+        
+        // 주변 픽셀도 체크해서 색칠 가능 영역 확장
+        if !isMainPixelColorable {
+            let checkRadius = 2
+            for dy in -checkRadius...checkRadius {
+                for dx in -checkRadius...checkRadius {
+                    let checkX = x + dx
+                    let checkY = y + dy
+                    
+                    if checkX >= 0 && checkX < width && checkY >= 0 && checkY < height {
+                        let checkOffset = (checkY * bytesPerRow) + (checkX * bytesPerPixel)
+                        let checkRed = bytes[checkOffset]
+                        let checkGreen = bytes[checkOffset + 1]
+                        let checkBlue = bytes[checkOffset + 2]
+                        
+                        if checkRed >= threshold && checkGreen >= threshold && checkBlue >= threshold {
+                            return true
+                        }
+                    }
+                }
+            }
+        }
+        
+        return isMainPixelColorable
     }
 }
 
@@ -308,10 +332,17 @@ struct FixedSizeImageView: UIViewRepresentable {
             
             let location = gesture.location(in: imageView)
             
-            // 좌표를 이미지 크기에 맞게 조정 - 수정된 부분
+            // 개선된 좌표 변환 - scaleToFill 모드 고려
+            let imageSize = parent.image.size
+            let viewSize = imageView.bounds.size
+            
+            // scaleToFill에서 실제 이미지가 차지하는 영역 계산
+            let scaleX = imageSize.width / viewSize.width
+            let scaleY = imageSize.height / viewSize.height
+            
             let adjustedLocation = CGPoint(
-                x: location.x * (parent.image.size.width / imageView.bounds.width),
-                y: location.y * (parent.image.size.height / imageView.bounds.height)
+                x: max(0, min(location.x * scaleX, imageSize.width - 1)),
+                y: max(0, min(location.y * scaleY, imageSize.height - 1))
             )
             
             switch gesture.state {
@@ -327,4 +358,8 @@ struct FixedSizeImageView: UIViewRepresentable {
             }
         }
     }
+}
+
+#Preview {
+    HandwritingView(inputText: "scaleToFill에서 실제 이미지가 차지하는 영역 계산")
 }
