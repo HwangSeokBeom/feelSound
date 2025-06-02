@@ -20,6 +20,7 @@ struct HandwritingView: View {
     @State private var isDrawing = false
     @State private var brushSize: CGFloat = 100
     @StateObject private var synth = PencilSoundSynth()
+    @State private var currentFontSize: CGFloat = 100
     
     
     let inputText: String
@@ -87,17 +88,18 @@ struct HandwritingView: View {
     }
     
     private func generateImage(words: String) {
-        if let textImage = createTextImage(text: words) {
+        if let (textImage, fontSize) = createTextImageWithFontSize(text: words) {
             let imageWithBackground = HandwritingProcessor.addWhiteBackground(to: textImage)
             originalImage = imageWithBackground
             floodFillImage = imageWithBackground
+            currentFontSize = fontSize
         }
     }
     
-    private func createTextImage(text: String) -> UIImage? {
+    private func createTextImageWithFontSize(text: String) -> (UIImage, CGFloat)? {
         let imageSize = CGSize(width: fixedImageSize, height: UIScreen.main.bounds.height)
-        let maxFontSize: CGFloat = 300  // 최대 폰트 크기
-        let minFontSize: CGFloat = 20   // 최소 폰트 크기
+        let maxFontSize: CGFloat = 300
+        let minFontSize: CGFloat = 20
         let padding: CGFloat = 40
         let scale: CGFloat = 1.0
         var bestFontSize = maxFontSize
@@ -126,7 +128,7 @@ struct HandwritingView: View {
             }
         }
         
-        // 최종 이미지 생성
+        // 최종 이미지 생성 (기존 코드와 동일)
         let finalFont = UIFont.systemFont(ofSize: bestFontSize, weight: .bold)
         let finalAttributes: [NSAttributedString.Key: Any] = [
             .font: finalFont,
@@ -161,7 +163,9 @@ struct HandwritingView: View {
         
         let image = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
-        return image
+        
+        guard let finalImage = image else { return nil }
+        return (finalImage, bestFontSize) // 폰트 크기도 함께 반환
     }
     
     private func handleDrawingStateChanged(_ isCurrentlyDrawing: Bool) {
@@ -204,38 +208,41 @@ struct HandwritingView: View {
         // 글자 영역인지 확인 (흰색 픽셀인지 체크)
         guard let originalImage = originalImage,
               isColorableArea(at: location, in: originalImage) else {
-            return image // 글자 영역이면 색칠하지 않고 원본 이미지 반환
+            return image
         }
         
         if isDrawing && currentAreaMask == nil {
-            let (mask, _) = HandwritingProcessor.createAreaMask(image: originalImage, at: location)
-            currentAreaMask = mask
-            let result = HandwritingProcessor.drawColor(image: image, at: location, with: uiColor, areaMask: mask, fontSize: brushSize)
-            previousDrawPoint = location
-            return result
-        } else if let previousPoint = previousDrawPoint {
-            let result = HandwritingProcessor.drawLine(
-                image: image,
-                from: previousPoint,
-                to: location,
-                with: uiColor,
-                areaMask: currentAreaMask,
-                fontSize: brushSize
-            )
-            previousDrawPoint = location
-            return result
-        } else {
-            let result = HandwritingProcessor.drawColor(
-                image: image,
-                at: location,
-                with: uiColor,
-                areaMask: currentAreaMask,
-                fontSize: brushSize
-            )
-            previousDrawPoint = location
-            return result
-        }
-    }
+              let (mask, _) = HandwritingProcessor.createAreaMask(image: originalImage, at: location)
+              currentAreaMask = mask
+              // 실제 폰트 크기 전달
+              let result = HandwritingProcessor.drawColor(image: image, at: location, with: uiColor, areaMask: mask, fontSize: currentFontSize)
+              previousDrawPoint = location
+              return result
+          } else if let previousPoint = previousDrawPoint {
+              // 실제 폰트 크기 전달
+              let result = HandwritingProcessor.drawLine(
+                  image: image,
+                  from: previousPoint,
+                  to: location,
+                  with: uiColor,
+                  areaMask: currentAreaMask,
+                  fontSize: currentFontSize
+              )
+              previousDrawPoint = location
+              return result
+          } else {
+              // 실제 폰트 크기 전달
+              let result = HandwritingProcessor.drawColor(
+                  image: image,
+                  at: location,
+                  with: uiColor,
+                  areaMask: currentAreaMask,
+                  fontSize: currentFontSize
+              )
+              previousDrawPoint = location
+              return result
+          }
+      }
     
     private func isColorableArea(at point: CGPoint, in image: UIImage) -> Bool {
         guard let cgImage = image.cgImage else { return false }
@@ -358,8 +365,4 @@ struct FixedSizeImageView: UIViewRepresentable {
             }
         }
     }
-}
-
-#Preview {
-    HandwritingView(inputText: "scaleToFill에서 실제 이미지가 차지하는 영역 계산")
 }

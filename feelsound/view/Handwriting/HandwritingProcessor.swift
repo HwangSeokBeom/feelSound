@@ -112,9 +112,9 @@ struct HandwritingProcessor {
         // 자동 색칠 체크
         if let mask = areaMask {
             let fillPercentage = checkFillPercentage(pixelData: pixelData, areaMask: mask, width: width, height: height)
-            if fillPercentage >= 0.7 {
-                // 70% 이상이면 파란색으로 자동 색칠
-                let blueComponents = getColorComponents(UIColor.blue)
+            if fillPercentage >= 0.6 {
+                // 60% 이상이면 파란색으로 자동 색칠
+                let blueComponents = getColorComponents(UIColor.cyan)
                 fillAreaWithColor(pixelData: pixelData, areaMask: mask, color: blueComponents, width: width, height: height)
                 return createImageFromContext(context) ?? image
             }
@@ -168,7 +168,7 @@ struct HandwritingProcessor {
             let fillPercentage = checkFillPercentage(pixelData: pixelData, areaMask: mask, width: width, height: height)
             if fillPercentage >= 0.7 {
                 // 70% 이상이면 파란색으로 자동 색칠
-                let blueComponents = getColorComponents(UIColor.blue)
+                let blueComponents = getColorComponents(UIColor.cyan)
                 fillAreaWithColor(pixelData: pixelData, areaMask: mask, color: blueComponents, width: width, height: height)
                 return createImageFromContext(context) ?? image
             }
@@ -188,7 +188,7 @@ struct HandwritingProcessor {
                     let offset = (y * width * 4) + (x * 4)
                     let currentColor = (pixelData[offset], pixelData[offset + 1], pixelData[offset + 2])
                     
-                    // 검은 줄이 아닌 경우에만 색칠
+                    // 검은 테두리는 색칠하지 않음
                     if !isBlackLine(currentColor) {
                         pixelData[offset] = color.0
                         pixelData[offset + 1] = color.1
@@ -237,7 +237,7 @@ extension HandwritingProcessor {
     }
     
     private static func isBlackLine(_ color: (UInt8, UInt8, UInt8)) -> Bool {
-        return color.0 < 30 && color.1 < 30 && color.2 < 30
+        return color.0 < 50 && color.1 < 50 && color.2 < 50  // 30 -> 50으로 변경하여 더 넓은 범위의 어두운 색 보호
     }
     
     private static func getColorComponents(_ color: UIColor) -> (UInt8, UInt8, UInt8) {
@@ -248,8 +248,14 @@ extension HandwritingProcessor {
     
     private static func calculateBrushRadius(fontSize: CGFloat) -> Int {
         // 폰트 크기에 비례하여 브러시 크기 계산
-        let baseRadius = max(3, Int(fontSize / 25))
-        return min(baseRadius, 15) // 최대값 제한
+        let scaleFactor: CGFloat = 0.15 // 조정 가능한 비율
+        let baseRadius = Int(fontSize * scaleFactor)
+        
+        // 최소/최대값 설정
+        let minRadius = 2
+        let maxRadius = 15
+        
+        return max(minRadius, min(baseRadius, maxRadius))
     }
     
     private static func createImageFromContext(_ context: CGContext, scale: CGFloat = 1.0) -> UIImage? {//) -> UIImage? {
@@ -315,6 +321,7 @@ extension HandwritingProcessor {
                 
                 guard isValidPoint(x: nx, y: ny, width: width, height: height) else { continue }
                 
+                // 마스크 체크 - true인 영역에만 색칠
                 if let mask = areaMask {
                     guard ny < mask.count && nx < mask[ny].count && mask[ny][nx] else { continue }
                 }
@@ -322,6 +329,7 @@ extension HandwritingProcessor {
                 let offset = (ny * width * 4) + (nx * 4)
                 let currentColor = (pixelData[offset], pixelData[offset + 1], pixelData[offset + 2])
                 
+                // 검은 테두리는 색칠하지 않음
                 if !isBlackLine(currentColor) {
                     pixelData[offset] = color.0
                     pixelData[offset + 1] = color.1
