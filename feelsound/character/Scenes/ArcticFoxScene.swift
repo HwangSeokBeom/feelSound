@@ -1,0 +1,665 @@
+//
+//  Untitled.swift
+//  feelsound
+//
+//  Created by Hwangseokbeom on 5/16/25.
+//
+
+import SpriteKit
+import AVFoundation
+
+class ArcticFoxScene: SKScene {
+
+    private var foxAudioEngine: AVAudioEngine?
+    private var audioPlayer: AVAudioPlayerNode!
+    private var footstepBuffer: AVAudioPCMBuffer?
+
+    private var foxNode: SKSpriteNode!
+    private var foxState: FoxState = .idle
+    private var lastDirection: Direction? = nil
+
+    var isEmotionListening: Bool = false {
+        didSet {
+            updateFoxForListeningState()
+        }
+    }
+    var isEmotionActing: Bool = false
+    var lastEmotion: String? = nil
+
+    enum FoxState {
+        case idle, walking(Direction), resting(Int)
+    }
+
+    enum Direction: CaseIterable {
+        case front, back, left, right
+    }
+
+    enum CharacterFacingState {
+        case normal     // 정면
+        case left
+        case right
+    }
+
+    // MARK: - Texture Groups
+    private struct FoxTextures {
+        var tail: [SKTexture] = []
+        var sniff: [SKTexture] = []
+        var sniffLeft: [SKTexture] = []
+        var sniffRight: [SKTexture] = []
+        var sniffWhileResting: [SKTexture] = []
+        var blink: [SKTexture] = []
+        var blinkLeft: [SKTexture] = []
+        var blinkRight: [SKTexture] = []
+        var blinkResting: [SKTexture] = []
+        var jump: [SKTexture] = []
+        var front: [SKTexture] = []
+        var back: [SKTexture] = []
+        var left: [SKTexture] = []
+        var right: [SKTexture] = []
+        var rest: [SKTexture] = []
+        var turnRightToFront: [SKTexture] = []
+        var turnLeftToFront: [SKTexture] = []
+        var turnFrontToRight: [SKTexture] = []
+        var turnFrontToLeft: [SKTexture] = []
+        var turnLeftToBack: [SKTexture] = []
+        var turnBackToLeft: [SKTexture] = []
+        var liftHead: [SKTexture] = []
+        var sniffing: [SKTexture] = []
+        var defaultTexture: [SKTexture] = []
+    }
+
+    private var textures = FoxTextures()
+
+    override func didMove(to view: SKView) {
+        setupBackground()
+        loadTextures()
+        setupFox()
+        setupAudio()
+    }
+
+    deinit {
+        foxAudioEngine?.stop()
+    }
+
+    func updateFoxForListeningState() {
+        if isEmotionListening {
+            if !isEmotionActing {
+                print("🎙 녹음 중 (idle) → 기준 텍스처 유지")
+                foxNode.removeAllActions()
+                foxNode.texture = textures.defaultTexture.first
+                foxState = .idle
+            } else {
+                print("🎙 녹음 중 (감정 반응 중) → 행동 유지")
+            }
+        } else {
+            print("🎤 녹음 종료 → 여우 자유 상태 복귀")
+            isEmotionActing = false
+            lastEmotion = nil
+            scheduleNextWalk()
+        }
+    }
+
+    private func setupAudio() {
+        AudioSessionManager.shared.configureSessionForPlayback()
+
+        foxAudioEngine = AVAudioEngine()
+        audioPlayer = AVAudioPlayerNode()
+        foxAudioEngine!.attach(audioPlayer)
+
+        guard let url = Bundle.main.url(forResource: "walking-through-leaves", withExtension: "wav"),
+              let file = try? AVAudioFile(forReading: url) else {
+            print("❌ 사운드 파일을 찾을 수 없습니다.")
+            return
+        }
+
+        let format = file.processingFormat
+        let frameCount = AVAudioFrameCount(file.length)
+
+        footstepBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)
+        try? file.read(into: footstepBuffer!)
+
+        foxAudioEngine!.connect(audioPlayer, to: foxAudioEngine!.outputNode, format: format)
+        audioPlayer.volume = 1.0
+
+        do {
+            try foxAudioEngine!.start()
+            print("✅ 오디오 엔진 시작됨")
+        } catch {
+            print("❌ 오디오 엔진 시작 실패: \(error)")
+        }
+
+        if let buffer = footstepBuffer {
+            let duration = Double(buffer.frameLength) / buffer.format.sampleRate
+            print("🎧 발소리 길이: \(duration)초")
+        }
+    }
+    
+    private func playFootstepSound() {
+        guard let buffer = footstepBuffer else { return }
+
+        print("🔊 발소리 재생 시도")
+
+        if !audioPlayer.isPlaying {
+            audioPlayer.play()
+        }
+
+        audioPlayer.scheduleBuffer(buffer, at: nil, options: [], completionHandler: {
+            print("🔁 발소리 재생 완료")
+        })
+    }
+    
+    private func setupBackground() {
+        let background = SKSpriteNode(imageNamed: "홈")
+        background.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        background.zPosition = -10
+        background.size = size
+        addChild(background)
+    }
+    
+    private func loadTextures() {
+        textures.back = loadSequence("뒤쪽_움직임_", count: 8)
+        textures.front = loadSequence("앞쪽_움직임_", count: 8)
+        textures.left = loadSequence("왼쪽_움직임_", count: 8)
+        textures.right = loadSequence("오른쪽_움직임_", count: 8)
+        textures.rest = loadSequence("휴식_", count: 16)
+        textures.turnRightToFront = loadSequence("오른쪽으로_걷다가_정면_보기_", count: 6)
+        textures.turnLeftToFront = loadSequence("왼쪽으로_걷다가_정면_보기_", count: 6)
+        textures.turnFrontToRight = textures.turnRightToFront.reversed()
+        textures.turnFrontToLeft = textures.turnLeftToFront.reversed()
+        textures.turnLeftToBack = loadSequence("왼쪽_보다_뒤돌아보기_", count: 6)
+        textures.turnBackToLeft = textures.turnLeftToBack.reversed()
+        textures.tail = loadSequence("꼬리흔들기_", count: 6)
+        textures.sniff = loadSequence("코_냄새_맡기_", count: 2)
+        textures.sniffLeft = loadSequence("왼쪽으로_걷다가_코_냄새맡기_", count: 2)
+        textures.sniffRight = loadSequence("오른쪽으로_걷다가_코_냄새맡기_", count: 2)
+        textures.sniffWhileResting = loadSequence("휴식중_코_냄새맡기_", count: 2)
+        textures.blink = loadSequence("눈_깜빡이기_", count: 2)
+        textures.blinkLeft = loadSequence("왼쪽으로_걷다가_눈_깜빡이기_", count: 2)
+        textures.blinkRight = loadSequence("오른쪽으로_걷다가_눈_깜빡이기_", count: 2)
+        textures.blinkResting = loadSequence("휴식중_눈_깜빡이기_", count: 2)
+        textures.jump = loadSequence("점프_", count: 6)
+        textures.liftHead = loadSequence("고개_들기_", count: 6)
+        textures.sniffing = loadSequence("냄새_맡기_", count: 6)
+        textures.defaultTexture = [SKTexture(imageNamed: "기준")]
+    }
+    
+    private func loadSequence(_ prefix: String, count: Int) -> [SKTexture] {
+        return (1...count).map { SKTexture(imageNamed: "\(prefix)\($0)") }
+    }
+    
+    private func setupFox() {
+        foxNode = SKSpriteNode(texture: textures.defaultTexture.first) // 👈 초기 텍스처를 기준으로 설정
+        foxNode.position = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
+        foxNode.zPosition = 1
+        foxNode.size = CGSize(width: 80, height: 80)
+        addChild(foxNode)
+        startWalking()
+    }
+    
+    private func startWalking() {
+        guard !isEmotionListening else {
+            print("🎙 녹음 중 → 걷기 중단")
+            foxNode.removeAllActions()
+            foxState = .idle
+            foxNode.texture = textures.defaultTexture.first // 👈 기준 텍스처 고정
+            return
+        }
+        let possibleDirections = availableDirections()
+        guard let direction = possibleDirections.randomElement() else {
+            scheduleNextWalk()
+            return
+        }
+
+        let continueWalk = { [weak self] in
+            guard let self = self else { return }
+            self.foxState = .walking(direction)
+            self.foxNode.removeAllActions()
+
+            let walkTextures = self.texturesFor(direction: direction)
+            let walkAnimation = SKAction.animate(with: walkTextures, timePerFrame: 0.1)
+            walkAnimation.timingFunction = { pow($0, 0.8) }
+            let walkLoop = SKAction.repeatForever(walkAnimation)
+
+            let tiltLoop = SKAction.repeatForever(SKAction.sequence([
+                SKAction.rotate(toAngle: 0.005, duration: 0.25, shortestUnitArc: true),
+                SKAction.rotate(toAngle: -0.005, duration: 0.25, shortestUnitArc: true)
+            ]))
+
+            self.foxNode.run(.group([walkLoop, tiltLoop]), withKey: "walk")
+            
+            // 🔈 걷기 사운드 타이밍 맞춰 반복 재생
+            let walkFrameDuration: TimeInterval = 0.1
+            let footstepInterval = SKAction.wait(forDuration: walkFrameDuration * 2) // 약 0.2초마다
+            let playFootstep = SKAction.run { [weak self] in
+                self?.playFootstepSound()
+            }
+            let soundLoop = SKAction.repeatForever(SKAction.sequence([footstepInterval, playFootstep]))
+            self.foxNode.run(soundLoop, withKey: "footstep")
+
+            let moveDistance: CGFloat = 100
+            let clampedTarget = CGPoint(
+                x: self.clamp(self.foxNode.position.x + (direction == .left ? -moveDistance : direction == .right ? moveDistance : 0),
+                              min: 40, max: self.size.width - 40),
+                y: self.clamp(self.foxNode.position.y + (direction == .front ? -moveDistance : direction == .back ? moveDistance : 0),
+                              min: 40, max: self.size.height - 40)
+            )
+
+            let move = SKAction.move(to: clampedTarget, duration: 2.5)
+            move.timingMode = .easeInEaseOut
+
+            let stop = SKAction.run {
+                self.foxNode.removeAllActions()
+                self.audioPlayer.stop() // 🔇 걷기 중 발소리도 정지
+                self.foxNode.texture = (direction == .left || direction == .right)
+                    ? walkTextures.last
+                    : walkTextures.first
+                self.foxNode.zRotation = 0
+                self.foxState = .idle
+            }
+
+            self.foxNode.run(.sequence([move, stop]), withKey: "move")
+
+            let wait = SKAction.wait(forDuration: 3.0)
+            let decideNext = SKAction.run {
+                self.lastDirection = direction
+
+                // 👃 확률 기반 냄새 맡기 (왼쪽/오른쪽 방향 한정)
+                if direction == .left, .random(probability: 0.3) {
+                    self.enterSniffingState(for: .left)
+                    return
+                }
+                if direction == .right, .random(probability: 0.3) {
+                    self.enterSniffingState(for: .right)
+                    return
+                }
+
+                // 👁 확률 기반 눈 깜빡이기 (걷는 방향에 따라 전용 텍스처 사용)
+                if direction == .left, .random(probability: 0.3) {
+                    self.enterBlinkingState(for: .left)
+                    return
+                }
+                if direction == .right, .random(probability: 0.3) {
+                    self.enterBlinkingState(for: .right)
+                    return
+                }
+
+                // 🎲 랜덤 행동 결정
+                let rand = Double.random(in: 0...1)
+                switch rand {
+                case 0..<0.10:
+                    self.enterRestingState()
+                case 0.10..<0.20:
+                    self.enterTailWaggingState()
+                case 0.20..<0.30:
+                    self.enterSniffingState(for: .normal)
+                case 0.30..<0.40:
+                    self.enterBlinkingState(for: .normal)
+                case 0.40..<0.50:
+                    self.enterJumpingState()
+                case 0.50..<0.60:
+                    self.enterHeadLiftingState()
+                case 0.60..<0.70:
+                    self.enterSniffingLoopState()
+                default:
+                    self.scheduleNextWalk() // 👉 30% 확률로 그냥 걷기 계속
+                }
+            }
+
+            self.run(.sequence([wait, decideNext]), withKey: "decision")
+        }
+
+        if let prev = lastDirection {
+            playTurnAnimation(from: prev, to: direction, completion: continueWalk)
+        } else {
+            continueWalk()
+        }
+    }
+    
+    private func playTurnAnimation(from old: Direction, to new: Direction, completion: @escaping () -> Void) {
+        let sequence: [SKAction] = {
+            switch (old, new) {
+            case (.right, .front):
+                return [SKAction.animate(with: textures.turnRightToFront, timePerFrame: 0.1)]
+            case (.left, .front):
+                return [SKAction.animate(with: textures.turnLeftToFront, timePerFrame: 0.1)]
+            case (.front, .right):
+                return [SKAction.animate(with: textures.turnFrontToRight, timePerFrame: 0.1)]
+            case (.front, .left):
+                return [SKAction.animate(with: textures.turnFrontToLeft, timePerFrame: 0.1)]
+            case (.left, .back):
+                return [SKAction.animate(with: textures.turnLeftToBack, timePerFrame: 0.1)]
+            case (.back, .left):
+                return [SKAction.animate(with: textures.turnBackToLeft, timePerFrame: 0.1)]
+            case (.right, .left):
+                return [
+                    SKAction.animate(with: textures.turnRightToFront, timePerFrame: 0.1),
+                    SKAction.wait(forDuration: 0.1),
+                    SKAction.animate(with: textures.turnFrontToLeft, timePerFrame: 0.1)
+                ]
+            case (.left, .right):
+                return [
+                    SKAction.animate(with: textures.turnLeftToFront, timePerFrame: 0.1),
+                    SKAction.wait(forDuration: 0.1),
+                    SKAction.animate(with: textures.turnFrontToRight, timePerFrame: 0.1)
+                ]
+            case (.back, .front):
+                return [
+                    SKAction.animate(with: textures.turnBackToLeft, timePerFrame: 0.1),
+                    SKAction.wait(forDuration: 0.1),
+                    SKAction.animate(with: textures.turnLeftToFront, timePerFrame: 0.1)
+                ]
+            default:
+                return []
+            }
+        }()
+
+        guard !sequence.isEmpty else {
+            completion()
+            return
+        }
+
+        let fullSequence = SKAction.sequence(sequence + [.wait(forDuration: 0.3), .run(completion)])
+        foxNode.run(fullSequence, withKey: "turning")
+    }
+    
+    private func playLoopAnimation(textures: [SKTexture], repeatCount: Int = 1, resetTo texture: SKTexture? = nil, timePerFrame: TimeInterval = 0.1, waitAfter: TimeInterval = 1.0, key: String, completion: (() -> Void)? = nil) {
+        let forward = SKAction.animate(with: textures, timePerFrame: timePerFrame)
+        let reverse = SKAction.animate(with: textures.reversed(), timePerFrame: timePerFrame)
+        let cycle = SKAction.sequence([forward, reverse])
+        let repeated = SKAction.repeat(cycle, count: repeatCount)
+        
+        var actions: [SKAction] = [repeated]
+        if let texture = texture {
+            actions.append(.run { [weak self] in self?.foxNode.texture = texture })
+        }
+        actions.append(.wait(forDuration: waitAfter))
+        if let completion = completion {
+            actions.append(.run(completion))
+        }
+        
+        foxNode.run(.sequence(actions), withKey: key)
+    }
+    
+    private func enterBlinkingState(for state: CharacterFacingState) {
+        let (tex, key): ([SKTexture], String) = {
+            switch state {
+            case .left: return (textures.blinkLeft, "blinkLeft")
+            case .right: return (textures.blinkRight, "blinkRight")
+            case .normal: return (textures.blink, "blink")
+            }
+        }()
+        
+        playLoopAnimation(textures: tex, key: key) {
+            self.scheduleNextWalk()
+        }
+    }
+    
+    private func enterSniffingState(for type: CharacterFacingState) {
+        let (tex, key, resetTex): ([SKTexture], String, SKTexture?) = {
+            switch type {
+            case .left: return (textures.sniffLeft, "sniffingLeft", textures.sniffLeft.first)
+            case .right: return (textures.sniffRight, "sniffingRight", textures.sniffRight.first)
+            case .normal: return (textures.sniff, "sniffing", textures.sniff.first)
+            }
+        }()
+
+        foxState = .resting(100 + type.hashValue) // 단순 식별용 숫자, 의미 없음
+        foxNode.removeAllActions()
+        playLoopAnimation(
+            textures: tex,
+            repeatCount: 2,
+            resetTo: resetTex,
+            timePerFrame: 0.25,
+            waitAfter: 1.0,
+            key: key
+        ) {
+            self.scheduleNextWalk()
+        }
+    }
+    
+    private func enterTailWaggingState() {
+        foxState = .resting(1)
+        foxNode.removeAllActions()
+        
+        let wag = SKAction.animate(with: textures.tail, timePerFrame: 0.15)
+        let loop = SKAction.sequence([.repeat(wag, count: 2), .wait(forDuration: 0.3)])
+        foxNode.run(.sequence([loop, .run { self.foxNode.texture = self.textures.tail.first }, .run(scheduleNextWalk)]), withKey: "tailWagOnly")
+    }
+    
+    private func enterRestingState() {
+        foxState = .resting(0)
+        foxNode.removeAllActions()
+
+        let restIn = SKAction.animate(with: textures.rest, timePerFrame: 0.02)
+        
+        let freezeLastFrame = SKAction.run {
+            if let last = self.textures.rest.last {
+                self.foxNode.texture = last
+            }
+        }
+
+        // 👁 눈 깜빡이기 or 👃 냄새 맡기 확률적 삽입
+        let maybeBlinkOrSniff = SKAction.run { [weak self] in
+            guard let self = self else { return }
+            
+            if .random(probability: 0.3) {
+                let blink = SKAction.animate(with: self.textures.blinkResting, timePerFrame: 0.2)
+                let blinkBack = SKAction.animate(with: self.textures.blinkResting.reversed(), timePerFrame: 0.2)
+                self.foxNode.run(.sequence([blink, blinkBack]), withKey: "blinkResting")
+            } else if .random(probability: 0.3) {
+                let sniff = SKAction.animate(with: self.textures.sniffWhileResting, timePerFrame: 0.25)
+                let sniffBack = SKAction.animate(with: self.textures.sniffWhileResting.reversed(), timePerFrame: 0.25)
+                self.foxNode.run(.sequence([sniff, sniffBack]), withKey: "sniffResting")
+            }
+        }
+
+        let holdLastRestFrame = SKAction.wait(forDuration: 5.0)
+        let restOut = SKAction.animate(with: textures.rest.reversed(), timePerFrame: 0.02)
+
+        let decide = SKAction.run {
+            self.scheduleNextWalk()
+        }
+
+        foxNode.run(.sequence([
+            restIn,
+            freezeLastFrame,
+            maybeBlinkOrSniff,   // 👈 확률 기반 깜빡이기 or 킁킁
+            holdLastRestFrame,
+            restOut,
+            decide
+        ]), withKey: "resting")
+    }
+    
+    private func enterJumpingState() {
+        foxNode.removeAllActions()
+        foxState = .resting(2)
+        foxNode.removeAllActions()
+
+        let jumpTextures = textures.jump
+        let jumpAnimation = SKAction.animate(with: jumpTextures, timePerFrame: 0.08)
+
+        // 점프 높이와 시간 설정
+        let jumpUp = SKAction.moveBy(x: 0, y: 40, duration: 0.2)
+        jumpUp.timingMode = .easeOut
+
+        let fallDown = SKAction.moveBy(x: 0, y: -40, duration: 0.2)
+        fallDown.timingMode = .easeIn
+
+        let jumpMotion = SKAction.sequence([jumpUp, fallDown])
+        let group = SKAction.group([jumpAnimation, jumpMotion])
+
+        let reset = SKAction.run { [weak self] in
+            self?.foxNode.texture = self?.textures.jump.last
+        }
+
+        let wait = SKAction.wait(forDuration: 0.01)
+        let next = SKAction.run { [weak self] in
+            self?.scheduleNextWalk()
+        }
+
+        foxNode.run(.sequence([group, reset, wait, next]), withKey: "jump")
+    }
+    
+    private func enterHeadLiftingState() {
+        foxState = .resting(3) // 식별용
+        foxNode.removeAllActions()
+
+        let lift = SKAction.animate(with: textures.liftHead, timePerFrame: 0.1)
+
+        let sequence = SKAction.sequence([
+            lift,
+            .run { self.scheduleNextWalk() }
+        ])
+        foxNode.run(sequence, withKey: "liftHead")
+    }
+    
+    private func enterSniffingLoopState() {
+        foxState = .resting(4) // 식별용
+        foxNode.removeAllActions()
+        
+        let sniff = SKAction.animate(with: textures.sniffing, timePerFrame: 0.12)
+        
+        let sequence = SKAction.sequence([
+            sniff,
+            .run { self.scheduleNextWalk() }
+        ])
+        
+        foxNode.run(sequence, withKey: "sniffingLoop")
+    }
+    
+    private func scheduleNextWalk() {
+        guard !isEmotionListening else {
+            print("🎙 녹음 중 → 다음 행동 대기 중단")
+            foxNode.removeAllActions()
+            foxNode.texture = textures.defaultTexture.first // 👈 기준 텍스처 고정
+            return
+        }
+
+        run(.sequence([
+            .wait(forDuration: .random(in: 0.5...2.0)),
+            .run { self.startWalking() }
+        ]), withKey: "nextWalk")
+    }
+    
+    private func clamp(_ value: CGFloat, min: CGFloat, max: CGFloat) -> CGFloat {
+        return Swift.max(min, Swift.min(value, max))
+    }
+    
+    private func texturesFor(direction: Direction) -> [SKTexture] {
+        switch direction {
+        case .front: return textures.front
+        case .back: return textures.back
+        case .left: return textures.left
+        case .right: return textures.right
+        }
+    }
+    
+    private func availableDirections() -> [Direction] {
+        let x = foxNode.position.x
+        let y = foxNode.position.y
+        let margin: CGFloat = foxNode.size.width / 2
+        let distance: CGFloat = 100
+
+        let minY = size.height * 0.1 + margin
+        let maxY = size.height * 0.8 - margin
+
+        var dirs: [Direction] = []
+
+        if y + distance <= maxY { dirs.append(.back) }
+        if y - distance >= minY { dirs.append(.front) }
+        if x - distance - margin >= 0 { dirs.append(.left) }
+        if x + distance + margin <= size.width { dirs.append(.right) }
+
+        return dirs
+    }
+}
+
+extension Bool {
+    static func random(probability: Double) -> Bool {
+        return Double.random(in: 0...1) < probability
+    }
+}
+
+extension Array {
+    subscript(safe index: Int) -> Element? {
+        return indices.contains(index) ? self[index] : nil
+    }
+}
+
+extension ArcticFoxScene {
+    private var currentTime: TimeInterval {
+        return CACurrentMediaTime()
+    }
+
+    private static var emotionCooldown: TimeInterval = 5.0
+    private var emotionGapSatisfied: Bool {
+        if let last = lastEmotionTime {
+            return (currentTime - last) > ArcticFoxScene.emotionCooldown
+        }
+        return true
+    }
+
+    private var lastEmotionTime: TimeInterval? {
+        get { UserDefaults.standard.double(forKey: "lastEmotionTime") }
+        set { UserDefaults.standard.set(newValue, forKey: "lastEmotionTime") }
+    }
+
+    func performAction(for emotion: String) {
+        print("⚡ 감정 동작 요청됨: \(emotion), 현재 acting: \(isEmotionActing), 이전 감정: \(lastEmotion ?? "없음")")
+
+        guard emotion != lastEmotion || emotionGapSatisfied else {
+            print("⏸ 동일 감정 반복 차단 (cooldown 적용)")
+            return
+        }
+
+        lastEmotion = emotion
+        lastEmotionTime = currentTime
+        isEmotionActing = true
+
+        foxNode.removeAllActions()
+        if let defaultTex = textures.defaultTexture.first {
+            foxNode.texture = defaultTex
+        }
+
+        let delay = SKAction.wait(forDuration: 0.2)
+        let actionRun = SKAction.run { [weak self] in
+            guard let self = self else { return }
+
+            print("🎬 감정 애니메이션 실행: \(emotion)")
+            switch emotion {
+            case "happy": self.enterTailWaggingState()
+            case "sad": self.enterRestingState()
+            case "angry": self.enterJumpingState()
+            case "neutral": self.enterRestingState()
+            default:
+                print("⚠️ 정의되지 않은 감정: \(emotion)")
+                self.isEmotionActing = false
+            }
+        }
+
+        let finish = SKAction.sequence([
+            .wait(forDuration: 5.0),
+            .run { [weak self] in
+                self?.isEmotionActing = false
+                self?.scheduleNextWalk()  // ✅ 감정 행동 후에도 녹음 상태 유지
+            }
+        ])
+
+        run(.sequence([delay, actionRun]), withKey: "emotionAction")
+        run(finish, withKey: "emotionFinish")
+    }
+    
+//    func updateFoxForListeningState() {
+//        if isEmotionListening {
+//            print("🎙 녹음 중 → 모든 동작 중단 및 기준 텍스처 고정")
+//            foxNode.removeAllActions()
+//            foxNode.texture = textures.defaultTexture.first
+//            foxState = .idle
+//        } else {
+//            print("🎤 녹음 종료 → 여우 자유 상태 복귀")
+//            isEmotionActing = false
+//            lastEmotion = nil
+//            scheduleNextWalk() // 🟢 다시 걷기 시작
+//        }
+//    }
+}
